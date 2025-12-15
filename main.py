@@ -4,8 +4,10 @@ import smtplib
 import os
 import datetime
 import subprocess
+import asyncio
+import re
+import edge_tts # YENİ MOTOR
 from groq import Groq
-from gtts import gTTS  # Seslendirme kütüphanesi
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -21,7 +23,11 @@ ALICI_MAIL = os.environ["ALICI_MAIL"]
 
 client = Groq(api_key=GROQ_API_KEY)
 
-# İlgi Alanı Filtreleri (Bunlar geçerse uyarı verir)
+# SES AYARI:
+# Erkek sesi için: "tr-TR-AhmetNeural"
+# Kadın sesi için: "tr-TR-EmelNeural"
+SES_MODELI = "tr-TR-AhmetNeural"
+
 KRITIK_KELIMELER = ["Turkey", "Türkiye", "Erdoğan", "NATO", "F-16", "Missile", "Nuclear", "Gaza", "Syria", "Cyprus"]
 
 rss_sources = {
@@ -34,10 +40,10 @@ rss_sources = {
 }
 
 # ==========================================
-# 2. AKILLI VERİ TOPLAMA (FİLTRELİ)
+# 2. VERİ TOPLAMA
 # ==========================================
 def fetch_news():
-    print("📡 Veri toplanıyor ve Kritik Kelimeler taranıyor...")
+    print("📡 Veri toplanıyor...")
     buffer = ""
     headers = {'User-Agent': 'Mozilla/5.0'}
     
@@ -50,7 +56,6 @@ def fetch_news():
                     title = entry.title
                     link = entry.link
                     
-                    # Kritik kelime kontrolü
                     if any(word.lower() in title.lower() for word in KRITIK_KELIMELER):
                         prefix = "🚨 [KRİTİK]"
                     else:
@@ -62,11 +67,10 @@ def fetch_news():
     return buffer
 
 # ==========================================
-# 3. YAPAY ZEKA ANALİZİ (GERİLİM METRELİ)
+# 3. YAPAY ZEKA ANALİZİ
 # ==========================================
 def query_ai(text_data):
-    print("🧠 Yapay Zeka Stratejik Analiz ve Puanlama Yapıyor...")
-    
+    print("🧠 Yapay Zeka Analiz Ediyor...")
     if len(text_data) > 8000: text_data = text_data[:8000]
 
     system_prompt = """Sen Kıdemli Devlet Danışmanısın.
@@ -86,11 +90,11 @@ def query_ai(text_data):
       <h3>📊 GÜNLÜK GERİLİM METRESİ</h3>
       <p><b>🌍 Küresel Risk:</b> ?/10</p>
       <p><b>🇹🇷 Türkiye Jeopolitik Risk:</b> ?/10</p>
-      <p><b>🔥 Sıcak Bölge:</b> (Örn: Gazze veya Ukrayna)</p>
+      <p><b>🔥 Sıcak Bölge:</b> (Örn: Gazze)</p>
     </div>
     
     <h3>🚨 GÜNÜN STRATEJİK ÖZETİ</h3>
-    (Burada olayları anlat, kaynaklara <a href='URL'>Link</a> ver.)
+    (Olayları anlat, kaynaklara <a href='URL'>Link</a> ver.)
     
     <h3>🔮 GELECEK PROJEKSİYONU</h3>
     (Analist Notu)
@@ -108,26 +112,35 @@ def query_ai(text_data):
         return f"Hata: {e}"
 
 # ==========================================
-# 4. SESLİ ASİSTAN (PODCAST MODU) 🎧
+# 4. MICROSOFT NEURAL SES MOTORU (GÜÇLÜ) 🎧
 # ==========================================
+async def generate_neural_voice(text, output_file):
+    communicate = edge_tts.Communicate(text, SES_MODELI)
+    await communicate.save(output_file)
+
 def create_audio_briefing(text_content):
-    print("🎙️ Sesli Brifing Hazırlanıyor...")
+    print("🎙️ Neural Ses (Spiker) Hazırlanıyor...")
+    
+    # TEMİZLİK: HTML taglerini ve Linkleri siliyoruz ki spiker "http slash slash" diye okumasın.
+    clean_text = re.sub('<[^<]+?>', '', text_content) # HTML sil
+    clean_text = re.sub(r'http\S+', '', clean_text)    # Linkleri sil
+    clean_text = clean_text.replace("📊", "").replace("🚨", "").replace("🇹🇷", "Türkiye ") # Emojileri temizle
+    
+    # Giriş metni ekle
+    final_script = "Sayın Abdullah Eymen, Günaydın. İşte bugünün stratejik istihbarat özeti. " + clean_text[:800] + "... Raporun tamamı için maili inceleyiniz."
+    
+    filename = "Gunluk_Brifing.mp3"
+    
     try:
-        # HTML taglerini temizle ki robot onları okumasın
-        clean_text = text_content.replace("<h3>", "").replace("</h3>", ". ").replace("<p>", "").replace("</p>", ". ").replace("<div>", "").replace("</div>", "")
-        # Sadece ilk 500 karakteri oku (Çok uzun olmasın)
-        speech_text = "Sayın Eymen, Günlük İstihbarat Raporunuz Hazır. " + clean_text[:600] + "... Detaylar raporda."
-        
-        tts = gTTS(text=speech_text, lang='tr')
-        filename = "Gunluk_Brifing.mp3"
-        tts.save(filename)
+        # Async fonksiyonu burada çalıştırıyoruz
+        asyncio.run(generate_neural_voice(final_script, filename))
         return filename
     except Exception as e:
         print(f"Ses Hatası: {e}")
         return None
 
 # ==========================================
-# 5. TARİHSEL HAFIZA (GITHUB ARŞİVLEME) 📚
+# 5. TARİHSEL HAFIZA (ARŞİV)
 # ==========================================
 def archive_report(report_body):
     print("💾 Rapor Arşivleniyor...")
@@ -135,44 +148,40 @@ def archive_report(report_body):
     folder = "ARSIV"
     filename = f"{folder}/Rapor_{date_str}.md"
     
-    # 1. Klasör yoksa oluştur
     if not os.path.exists(folder):
         os.makedirs(folder)
         
-    # 2. Dosyayı yaz
     with open(filename, "w", encoding="utf-8") as f:
         f.write(report_body)
     
-    # 3. Git komutları ile GitHub'a geri yükle (Push)
     try:
         subprocess.run(["git", "config", "--global", "user.name", "Istihbarat Botu"])
         subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
         subprocess.run(["git", "add", filename])
-        subprocess.run(["git", "commit", "-m", f"Arşiv eklendi: {date_str}"])
+        subprocess.run(["git", "commit", "-m", f"Arşiv: {date_str}"])
         subprocess.run(["git", "push"])
-        print("✅ Arşiv başarıyla GitHub'a yüklendi.")
-    except Exception as e:
-        print(f"⚠️ Arşivleme Hatası (Localde çalışıyorsan normaldir): {e}")
+        print("✅ Arşivlendi.")
+    except:
+        pass
 
 # ==========================================
-# 6. MAİL GÖNDERME (MP3 EKLENTİLİ)
+# 6. MAİL GÖNDERME
 # ==========================================
 def send_email(report_body, audio_file):
     msg = MIMEMultipart()
     msg['From'] = GMAIL_USER
     msg['To'] = ALICI_MAIL
-    msg['Subject'] = f"🛡️ GÜNLÜK İSTİHBARAT + SESLİ BRİFİNG - {datetime.date.today()}"
+    msg['Subject'] = f"🛡️ GÜNLÜK BRİFİNG + PODCAST - {datetime.date.today()}"
     
     html_content = f"""
-    <html><body>
+    <html><body style='font-family: Arial, sans-serif;'>
         <h2 style="color:#2c3e50;">Kişiselleştirilmiş İstihbarat Raporu</h2>
         {report_body}
-        <br><p><i>Sesli özet ektedir.</i></p>
+        <br><p style='color:green;'><b>🎧 Sesli özet ektedir. (Neural Voice Technology)</b></p>
     </body></html>
     """
     msg.attach(MIMEText(html_content, 'html'))
 
-    # MP3 Dosyasını Ekle
     if audio_file and os.path.exists(audio_file):
         with open(audio_file, "rb") as f:
             part = MIMEBase('application', 'octet-stream')
@@ -187,7 +196,7 @@ def send_email(report_body, audio_file):
         server.login(GMAIL_USER, GMAIL_PASSWORD)
         server.sendmail(GMAIL_USER, ALICI_MAIL, msg.as_string())
         server.quit()
-        print("✅ E-posta ve Ses Dosyası gönderildi!")
+        print("✅ E-posta gönderildi!")
     except Exception as e:
         print(f"❌ Mail Hatası: {e}")
 
@@ -197,16 +206,9 @@ def send_email(report_body, audio_file):
 if __name__ == "__main__":
     raw_data = fetch_news()
     if len(raw_data) > 20:
-        # 1. Analiz Et
         report = query_ai(raw_data)
-        
-        # 2. Arşivle
         archive_report(report)
-        
-        # 3. Seslendir
         audio_file = create_audio_briefing(report)
-        
-        # 4. Gönder
         send_email(report, audio_file)
     else:
         print("Veri yok.")
