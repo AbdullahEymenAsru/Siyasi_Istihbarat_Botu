@@ -1,4 +1,4 @@
 feedparser
 requests
 groq
-gTTS
+edge-tts
