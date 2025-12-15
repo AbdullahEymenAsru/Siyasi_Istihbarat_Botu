@@ -31,58 +31,80 @@ client = Groq(api_key=GROQ_API_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 plt.switch_backend('Agg')
 
+# --- DEVASA STRATEJİK KAYNAK HAVUZU (v21.0) ---
 rss_sources = {
+    # --- BATI VE AVRUPA (NATO MERKEZLİ) ---
     'BBC World': 'http://feeds.bbci.co.uk/news/world/rss.xml',
+    'CNN International': 'http://rss.cnn.com/rss/edition.rss',
+    'Voice of America (VOA)': 'https://www.voanews.com/api/zg$oq_et$p',
     'Foreign Policy': 'https://foreignpolicy.com/feed/',
-    'EuroNews': 'https://www.euronews.com/rss?format=mrss&level=theme&name=news',
-    'Al Jazeera': 'https://www.aljazeera.com/xml/rss/all.xml',
+    'Deutsche Welle (Germany)': 'https://rss.dw.com/xml/rss-en-all', # YENİ (Avrupa'nın Sesi)
+    
+    # --- TÜRKİYE VE ORTADOĞU ---
+    'TRT World': 'https://www.trtworld.com/rss',
+    'Turkiye Arastirmalari Vakfi': 'https://tav.org.tr/feed/',
     'SETA Vakfi': 'https://www.setav.org/feed/',
-    'ORSAM': 'https://orsam.org.tr/rss',
+    'Al Jazeera': 'https://www.aljazeera.com/xml/rss/all.xml',
+    'Times of Israel': 'https://www.timesofisrael.com/feed/', # YENİ (Tel Aviv Perspektifi)
+    'Tehran Times (Iran)': 'https://www.tehrantimes.com/rss', # YENİ (Tahran/Direniş Ekseni)
+    
+    # --- ASYA - PASİFİK VE DOĞU BLOKU ---
     'TASS (Russia)': 'https://tass.com/rss/v2.xml',
     'China Daily': 'https://www.chinadaily.com.cn/rss/world_rss.xml',
-    'Dawn (Pakistan)': 'https://www.dawn.com/feeds/home/'
+    'Yonhap (South Korea)': 'https://en.yna.co.kr/RSS/news.xml', # YENİ (Seul/Teknoloji/Kuzey Kore)
+    'Dawn (Pakistan)': 'https://www.dawn.com/feeds/home/',
+    'Times of India': 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms' # YENİ (Yeni Süper Güç)
 }
 
-KRITIK_AKTORLER = ["Turkey", "Türkiye", "Erdoğan", "Fidan", "Biden", "Putin", "Xi Jinping", "Zelensky", "Netanyahu", "Hamas", "NATO", "EU", "Iran", "China", "Russia", "Pakistan", "India"]
+# Kritik Aktör listesini de genişlettik (Seul, Tahran, Delhi vb. için)
+KRITIK_AKTORLER = ["Turkey", "Türkiye", "Erdoğan", "Fidan", "Biden", "Trump", "Putin", "Xi Jinping", "Zelensky", "Netanyahu", "Hamas", "Hezbollah", "NATO", "EU", "Iran", "China", "Russia", "Pakistan", "India", "Greece", "South Korea", "North Korea", "Kim Jong Un"]
 
 # ==========================================
-# 2. AJAN 1: RESEARCHER (VERİ TOPLAYICI) 🕵️‍♂️
+# 2. AJAN 1: RESEARCHER (VERİ TOPLAYICI)
 # ==========================================
 def calculate_priority_score(title, summary):
     score = 0
     text = (title + " " + summary).lower()
     
-    high_priority = ["nuclear", "nükleer", "war", "savaş", "missile", "füze", "attack", "saldırı", "gaza", "gazze", "ukraine", "ukrayna", "taiwan"]
+    # 1. SEVİYE: KRİTİK TEHDİTLER (+50 Puan)
+    high_priority = ["nuclear", "nükleer", "war", "savaş", "missile", "füze", "attack", "saldırı", "gaza", "gazze", "ukraine", "ukrayna", "taiwan", "terror", "terör", "bomb"]
     if any(w in text for w in high_priority): score += 50
     
-    med_priority = ["turkey", "türkiye", "erdogan", "nato", "putin", "biden", "xi jinping", "f-16", "s-400", "pkk", "ypg", "syria", "suriye"]
+    # 2. SEVİYE: STRATEJİK İLGİ (+30 Puan)
+    med_priority = ["turkey", "türkiye", "erdogan", "nato", "putin", "biden", "trump", "xi jinping", "kim jong un", "iran", "israel", "defense", "savunma", "s-400", "f-16", "f-35"]
     if any(w in text for w in med_priority): score += 30
     
-    low_priority = ["trade", "ticaret", "economy", "ekonomi", "deal", "anlaşma", "meeting", "toplantı", "eu", "ab"]
+    # 3. SEVİYE: EKONOMİ VE DİPLOMASİ (+10 Puan)
+    low_priority = ["trade", "ticaret", "economy", "ekonomi", "deal", "anlaşma", "meeting", "toplantı", "eu", "ab", "energy", "enerji", "oil", "petrol", "chip"]
     if any(w in text for w in low_priority): score += 10
     
     return score
 
 def fetch_news():
-    print("🕵️‍♂️ AJAN 1 (RESEARCHER): Sahadan veri topluyor...")
+    print("🕵️‍♂️ AJAN 1 (RESEARCHER): Genişletilmiş ağdan veri topluyor...")
     all_news = []
     headers = {'User-Agent': 'Mozilla/5.0'}
     
     for source, url in rss_sources.items():
         try:
-            resp = requests.get(url, headers=headers, timeout=15)
+            # Zaman aşımını 25 saniyeye çıkardık (Kaynak sayısı arttı)
+            resp = requests.get(url, headers=headers, timeout=25)
             feed = feedparser.parse(resp.content)
             if feed.entries:
-                for entry in feed.entries[:5]:
+                # Her kaynaktan 3 haber çek (Kaynak çok olduğu için sayı 3 ideal)
+                for entry in feed.entries[:3]:
                     title = entry.title
                     link = entry.link
                     summary = entry.summary[:200] if hasattr(entry, 'summary') else ""
                     score = calculate_priority_score(title, summary)
                     all_news.append({"source": source, "title": title, "link": link, "summary": summary, "score": score})
-        except: continue
+        except Exception as e:
+            print(f"⚠️ {source} hatası: {e}")
+            continue
 
+    # En yüksek puanlıları seç
     all_news.sort(key=lambda x: x['score'], reverse=True)
-    top_news = all_news[:5]
+    top_news = all_news[:7] # Kritik haber sayısını 6'dan 7'ye çıkardık (Daha fazla veri)
     
     buffer = ""
     raw_links_html = "<ul>"
@@ -95,7 +117,7 @@ def fetch_news():
     return buffer, raw_links_html
 
 # ==========================================
-# 3. HAFIZA MODÜLÜ (DATA BANK)
+# 3. HAFIZA MODÜLÜ
 # ==========================================
 def read_historical_memory():
     memory_buffer = ""
@@ -115,7 +137,7 @@ def read_historical_memory():
     return memory_buffer
 
 # ==========================================
-# 4. GÖRSELLEŞTİRME (HARİTACI)
+# 4. GÖRSELLEŞTİRME
 # ==========================================
 def draw_network_graph(text_data):
     print("🗺️ AJAN 5 (VISUALIZER): Harita çiziyor...")
@@ -141,56 +163,45 @@ def draw_network_graph(text_data):
     return filename
 
 # ==========================================
-# 5. AJANLI SİMÜLASYON (MULTI-AGENT WORKFLOW) 🤖🤖🤖
+# 5. AJANLI SİMÜLASYON (MULTI-AGENT)
 # ==========================================
 def run_agent_workflow(current_data, historical_memory):
     
-    # --- ADIM 1: AJAN 2 (HISTORIAN) ---
     print("⏳ AJAN 2 (HISTORIAN): Geçmişi tarıyor...")
     historian_prompt = f"""
     Sen uzman bir Tarihçisin. Görevin bugünkü haberlerle geçmiş raporları kıyaslamak.
-    
     BUGÜN: {current_data}
     GEÇMİŞ: {historical_memory}
-    
-    GÖREV: Sadece ve sadece geçmişle bugün arasındaki BENZERLİKLERİ veya ÇELİŞKİLERİ maddeler halinde yaz.
-    Yorum yapma, sadece tespit yap.
+    GÖREV: Sadece BENZERLİKLERİ veya ÇELİŞKİLERİ maddeler halinde yaz.
     """
     history_analysis = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": historian_prompt}]
     ).choices[0].message.content
 
-    # --- ADIM 2: AJAN 3 (THE CRITIC) ---
     print("⚖️ AJAN 3 (THE CRITIC): Analizi denetliyor...")
     critic_prompt = f"""
-    Sen 'Kızıl Takım' (Red Team) liderisin. Görevin analizlerdeki açıkları bulmak.
-    
+    Sen 'Kızıl Takım' (Red Team) liderisin. 
     VERİLER: {current_data}
-    
-    GÖREV: Bu verilerde Batı veya Doğu medyasının manipülasyonu var mı? 
-    Hangi kaynaklar birbirini yalanlıyor? Çok sert ve şüpheci bir dille kısa bir 'İç İstihbarat Notu' yaz.
+    GÖREV: Batı (CNN/VOA/BBC) ile Doğu/Asya (TASS/China Daily/Tehran Times) kaynakları arasındaki propaganda farkını bul.
+    Hangi taraf neyi gizliyor? İsrail ve İran kaynakları ne diyor? Sert bir dille yaz.
     """
     critic_analysis = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": critic_prompt}]
     ).choices[0].message.content
 
-    # --- ADIM 3: AJAN 4 (CHIEF EDITOR) ---
     print("✍️ AJAN 4 (CHIEF EDITOR): Nihai raporu yazıyor...")
-    
     final_system_prompt = """Sen Savaş Odası'nın Başkanısın. 
-    Tarihçi ve Denetçi'den gelen raporları birleştirip NİHAİ STRATEJİK RAPORU yazacaksın.
+    NİHAİ STRATEJİK RAPORU yaz.
     
     FORMAT: HTML kullan.
-    ÜSLUP: Akademik, net, yönlendirici.
-    
     BÖLÜMLER:
-    1. REALİST KANAT (Güvenlik)
-    2. LİBERAL KANAT (Diplomasi)
-    3. PROPAGANDA SAVAŞI (Denetçi Notları buraya)
-    4. TARİHSEL TESPİT (Tarihçi Notları buraya)
-    5. BAŞKANIN KARARI (Senin hükmün)
+    1. REALİST KANAT (Güvenlik odaklı)
+    2. LİBERAL KANAT (Diplomasi odaklı)
+    3. PROPAGANDA SAVAŞI (Denetçi Notları - Batı vs Doğu/İran/İsrail)
+    4. TARİHSEL TESPİT (Tarihçi Notları)
+    5. BAŞKANIN KARARI
     6. GELECEK SİMÜLASYONU (% Olasılıklar)
     """
     
@@ -243,74 +254,73 @@ def archive(report_body):
     except: pass
 
 def send_email_to_council(report_body, raw_links, audio_file, image_file):
-    print(f"📧 Gönderiliyor: {ALICI_LISTESI}")
-    msg = MIMEMultipart('related')
-    msg['From'] = GMAIL_USER
-    msg['To'] = ", ".join(ALICI_LISTESI) 
-    msg['Subject'] = f"🧠 ÇOKLU AJAN SİSTEMİ RAPORU - {datetime.date.today()}"
+    print(f"📧 Dağıtım Başlıyor: {len(ALICI_LISTESI)} Kişi")
     
-    msg_alternative = MIMEMultipart('alternative')
-    msg.attach(msg_alternative)
-
-    html_content = f"""
-    <html><body style='font-family: Arial, sans-serif; color:#333;'>
-        <h1 style="color:#c0392b; text-align:center;">🛡️ SAVAŞ ODASI: ÖZEL TİM</h1>
-        <p style="text-align:center;"><i>"Researcher > Historian > Critic > Editor"</i></p>
-        <hr>
-        <center>
-            <h3>🕸️ GÜÇ DENGESİ AĞI</h3>
-            <img src="cid:network_map" style="width:100%; max-width:600px; border:1px solid #ddd; padding:5px;">
-        </center>
-        {report_body}
-        <br><hr>
-        <div style="font-size:12px; color:#555; background:#f9f9f9; padding:10px;">
-            <h3>📚 AJAN 1 TARAFINDAN TOPLANAN KAYNAKLAR</h3>
-            {raw_links}
-        </div>
-    </body></html>
-    """
-    msg_alternative.attach(MIMEText(html_content, 'html'))
-
-    if image_file and os.path.exists(image_file):
-        with open(image_file, 'rb') as f:
-            img = MIMEImage(f.read())
-            img.add_header('Content-ID', '<network_map>')
-            img.add_header('Content-Disposition', 'inline', filename=image_file)
-            msg.attach(img)
-
-    if audio_file and os.path.exists(audio_file):
-        with open(audio_file, "rb") as f:
-            part = MIMEBase('application', 'octet-stream')
-            part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f'attachment; filename="{audio_file}"')
-        msg.attach(part)
-
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(GMAIL_USER, GMAIL_PASSWORD)
-        server.sendmail(GMAIL_USER, ALICI_LISTESI, msg.as_string())
+        
+        for alici in ALICI_LISTESI:
+            print(f"   -> Gönderiliyor: {alici}")
+            
+            msg = MIMEMultipart('related')
+            msg['From'] = GMAIL_USER
+            msg['To'] = alici 
+            msg['Subject'] = f"🧠 KİŞİSEL İSTİHBARAT RAPORU - {datetime.date.today()}"
+            
+            msg_alternative = MIMEMultipart('alternative')
+            msg.attach(msg_alternative)
+
+            html_content = f"""
+            <html><body style='font-family: Arial, sans-serif; color:#333;'>
+                <h1 style="color:#c0392b; text-align:center;">🛡️ SAVAŞ ODASI (GENİŞLETİLMİŞ AĞ)</h1>
+                <p style="text-align:center;"><i>"Sayın Üye İçin Özel Hazırlanmıştır"</i></p>
+                <hr>
+                <center>
+                    <h3>🕸️ GÜÇ DENGESİ AĞI</h3>
+                    <img src="cid:network_map" style="width:100%; max-width:600px; border:1px solid #ddd; padding:5px;">
+                </center>
+                {report_body}
+                <br><hr>
+                <div style="font-size:12px; color:#555; background:#f9f9f9; padding:10px;">
+                    <h3>📚 AJAN 1 TARAFINDAN TOPLANAN KAYNAKLAR</h3>
+                    {raw_links}
+                </div>
+            </body></html>
+            """
+            msg_alternative.attach(MIMEText(html_content, 'html'))
+
+            if image_file and os.path.exists(image_file):
+                with open(image_file, 'rb') as f:
+                    img = MIMEImage(f.read())
+                    img.add_header('Content-ID', '<network_map>')
+                    img.add_header('Content-Disposition', 'inline', filename=image_file)
+                    msg.attach(img)
+
+            if audio_file and os.path.exists(audio_file):
+                with open(audio_file, "rb") as f:
+                    part = MIMEBase('application', 'octet-stream')
+                    part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename="{audio_file}"')
+                msg.attach(part)
+            
+            server.sendmail(GMAIL_USER, alici, msg.as_string())
+        
         server.quit()
-        print("✅ Başarıyla iletildi!")
+        print("✅ Tüm dağıtım başarıyla tamamlandı!")
+        
     except Exception as e:
-        print(f"❌ Mail Hatası: {e}")
+        print(f"❌ Dağıtım Hatası: {e}")
 
 if __name__ == "__main__":
-    # ADIM 1: ARAŞTIRMACI (Researcher)
     raw_data, raw_links = fetch_news()
-    
-    # ADIM 2: HAFIZA ÇAĞIRMA
     memory = read_historical_memory()
     
     if len(raw_data) > 20:
-        # ADIM 3: ÇOKLU AJAN İŞ AKIŞI (Historian -> Critic -> Editor)
         report = run_agent_workflow(raw_data, memory)
-        
-        # ADIM 4: GÖRSELLEŞTİRİCİ (Visualizer)
         graph_map = draw_network_graph(raw_data)
-        
-        # ADIM 5: ARŞİV VE DAĞITIM
         archive(report)
         audio = create_audio(report)
         send_email_to_council(report, raw_links, audio, graph_map)
