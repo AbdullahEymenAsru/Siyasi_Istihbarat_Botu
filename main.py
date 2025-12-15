@@ -3,14 +3,13 @@ import requests
 import smtplib
 import os
 import datetime
-from groq import Groq # Yeni kütüphane
+from groq import Groq
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # ==========================================
 # 1. AYARLAR
 # ==========================================
-# GitHub Secrets'tan Groq anahtarını alıyoruz
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GMAIL_USER = os.environ["GMAIL_USER"]
 GMAIL_PASSWORD = os.environ["GMAIL_PASSWORD"]
@@ -37,6 +36,7 @@ rss_sources = {
 def fetch_news():
     print("📡 Veri toplanıyor...")
     buffer = ""
+    # Bot korumalarını aşmak için User-Agent
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     
     for source, url in rss_sources.items():
@@ -53,18 +53,17 @@ def fetch_news():
     return buffer
 
 # ==========================================
-# 4. YAPAY ZEKA ANALİZİ (LLAMA-3 via GROQ)
+# 4. YAPAY ZEKA ANALİZİ (GÜNCEL MODEL)
 # ==========================================
 def query_ai(text_data):
-    print("🧠 Llama-3 Analiz Yapıyor (Groq Hızıyla)...")
+    print("🧠 Yapay Zeka Analiz Yapıyor (Llama 3.3)...")
     
-    # Metni çok uzatmayalım
-    if len(text_data) > 4000:
-        text_data = text_data[:4000]
+    if len(text_data) > 5000:
+        text_data = text_data[:5000]
 
     system_prompt = """Sen uzman bir Uluslararası İlişkiler analistisin. 
     Verilen haber başlıklarını sentezle ve Türkiye odaklı bir stratejik rapor yaz.
-    Sadece gerçekleri değil, bunların ne anlama geldiğini (analiz) de yaz."""
+    Sadece haberleri çevirme, arkasındaki anlamı ve stratejik riski yorumla."""
     
     user_prompt = f"""
     HABERLER:
@@ -73,21 +72,24 @@ def query_ai(text_data):
     GÖREV:
     Kısa ve net bir "Günlük İstihbarat Özeti" oluştur.
     
-    FORMAT:
-    1. 🚨 GÜNÜN KRİTİK OLAYI
-    2. 🌍 BÖLGESEL DİNAMİKLER (Ortadoğu/Batı)
-    3. 🇹🇷 TÜRKİYE PERSPEKTİFİ (Riskler ve Fırsatlar)
+    RAPOR ŞABLONU:
+    1. 🚨 GÜNÜN KRİTİK GELİŞMESİ
+    2. 🌍 KÜRESEL DENGELER (ABD/Rusya/Çin Hamleleri)
+    3. 🇹🇷 TÜRKİYE İÇİN RİSK VE FIRSATLAR
     """
 
     try:
         completion = client.chat.completions.create(
-            model="llama3-8b-8192", # Meta'nın çok hızlı ve zeki modeli
+            # --- DEĞİŞEN KISIM BURASI ---
+            # 'llama3-8b-8192' yerine en yeni ve güçlü modeli kullanıyoruz:
+            model="llama-3.3-70b-versatile", 
+            
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.7,
-            max_tokens=1000,
+            temperature=0.6,
+            max_tokens=1500,
         )
         return completion.choices[0].message.content
         
@@ -101,15 +103,15 @@ def send_email(report_body):
     msg = MIMEMultipart()
     msg['From'] = GMAIL_USER
     msg['To'] = ALICI_MAIL
-    msg['Subject'] = f"⚡ GÜNLÜK İSTİHBARAT (Llama-3) - {datetime.date.today()}"
+    msg['Subject'] = f"⚡ GÜNLÜK İSTİHBARAT RAPORU - {datetime.date.today()}"
     
     html_content = f"""
-    <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-        <h2 style="color: #b71c1c;">🌍 GÜNLÜK SİYASİ ANALİZ</h2>
+    <div style="font-family: Arial, sans-serif; color: #2c3e50; line-height: 1.6;">
+        <h2 style="color: #c0392b;">🌍 GÜNLÜK SİYASİ ANALİZ</h2>
         <hr>
-        <div style="white-space: pre-wrap;">{report_body}</div>
+        <div style="white-space: pre-wrap; font-size: 14px;">{report_body}</div>
         <br>
-        <p style="font-size: 12px; color: #888;"><i>Power by Groq & Llama-3</i></p>
+        <p style="font-size: 11px; color: #95a5a6;"><i>Analiz Motoru: Llama 3.3 (70B) via Groq</i></p>
     </div>
     """
     
