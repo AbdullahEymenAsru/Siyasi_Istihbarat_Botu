@@ -2,16 +2,15 @@ name: Gunluk Istihbarat Botu
 
 on:
   schedule:
-    # Her sabah Türkiye saatiyle 08:00 (UTC 05:00)
-    - cron: '0 5 * * *'
-  workflow_dispatch: # Manuel tetikleme butonu ekler
+    - cron: '0 5 * * *' # Her sabah 08:00
+  workflow_dispatch: # Manuel buton
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Depoyu Çek (Checkout)
+      - name: Depoyu Çek
         uses: actions/checkout@v3
 
       - name: Python Kur
@@ -20,12 +19,14 @@ jobs:
           python-version: '3.9'
 
       - name: Kütüphaneleri Yükle
+        # requirements.txt varsa onu kullan, yoksa elle yükle
         run: |
-          pip install -r requirements.txt
+          pip install feedparser requests groq
 
       - name: Ajanı Çalıştır
         env:
-          HF_API_KEY: ${{ secrets.HF_API_KEY }}
+          # BURASI KRİTİK: Python'a anahtarı burada teslim ediyoruz
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           ALICI_MAIL: ${{ secrets.ALICI_MAIL }}
