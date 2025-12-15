@@ -3,21 +3,21 @@ import requests
 import smtplib
 import os
 import datetime
-import time
+from groq import Groq # Yeni kütüphane
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # ==========================================
 # 1. AYARLAR
 # ==========================================
-HF_API_KEY = os.environ["HF_API_KEY"]
+# GitHub Secrets'tan Groq anahtarını alıyoruz
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GMAIL_USER = os.environ["GMAIL_USER"]
 GMAIL_PASSWORD = os.environ["GMAIL_PASSWORD"]
 ALICI_MAIL = os.environ["ALICI_MAIL"]
 
-# MODEL DEĞİŞİKLİĞİ: Zephyr-7B (Mistral tabanlıdır ama daha hızlı tepki verir)
-API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
-HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
+# Groq İstemcisini Başlat
+client = Groq(api_key=GROQ_API_KEY)
 
 # ==========================================
 # 2. KAYNAKLAR
@@ -37,15 +37,14 @@ rss_sources = {
 def fetch_news():
     print("📡 Veri toplanıyor...")
     buffer = ""
-    chrome_agent = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     
     for source, url in rss_sources.items():
         try:
-            resp = requests.get(url, headers=chrome_agent, timeout=10)
+            resp = requests.get(url, headers=headers, timeout=10)
             feed = feedparser.parse(resp.content)
             if feed.entries:
-                buffer += f"\n--- {source} ---\n"
-                # Her kaynaktan 2 haber al
+                buffer += f"\n--- KAYNAK: {source} ---\n"
                 for entry in feed.entries[:2]:
                     title = entry.title
                     buffer += f"- {title}\n"
@@ -54,60 +53,46 @@ def fetch_news():
     return buffer
 
 # ==========================================
-# 4. YAPAY ZEKA ANALİZİ (GÜÇLENDİRİLMİŞ)
+# 4. YAPAY ZEKA ANALİZİ (LLAMA-3 via GROQ)
 # ==========================================
 def query_ai(text_data):
-    print("🧠 Yapay Zeka (Zephyr) analiz yapıyor...")
-
-    # ÖNLEM: Eğer metin çok uzunsa API hata verir (503 veya 400).
-    # Metni son 3000 karakterle sınırlayalım.
-    if len(text_data) > 3000:
-        text_data = text_data[:3000] + "..."
-
-    prompt = f"""<|system|>
-Sen uzman bir siyaset bilimcisin. Aşağıdaki haber başlıklarını analiz et ve Türkçe bir özet rapor yaz.
-</s>
-<|user|>
-HABERLER:
-{text_data}
-
-GÖREV:
-Bu haberlere dayanarak kısa bir "Durum Raporu" oluştur.
-1. GÜNÜN OLAYI
-2. BÖLGESEL DURUM
-3. TÜRKİYE ANALİZİ
-</s>
-<|assistant|>"""
+    print("🧠 Llama-3 Analiz Yapıyor (Groq Hızıyla)...")
     
-    payload = {
-        "inputs": prompt,
-        "parameters": {"max_new_tokens": 800, "return_full_text": False},
-        "options": {"wait_for_model": True}
-    }
+    # Metni çok uzatmayalım
+    if len(text_data) > 4000:
+        text_data = text_data[:4000]
+
+    system_prompt = """Sen uzman bir Uluslararası İlişkiler analistisin. 
+    Verilen haber başlıklarını sentezle ve Türkiye odaklı bir stratejik rapor yaz.
+    Sadece gerçekleri değil, bunların ne anlama geldiğini (analiz) de yaz."""
     
-    # 5 KERE DENEME MEKANİZMASI (Daha İnatçı)
-    for i in range(5):
-        try:
-            response = requests.post(API_URL, headers=HEADERS, json=payload)
-            result = response.json()
-            
-            # Başarılı cevap kontrolü
-            if isinstance(result, list) and 'generated_text' in result[0]:
-                return result[0]['generated_text']
-            
-            # Model yükleniyorsa bekle
-            if isinstance(result, dict) and 'error' in result:
-                print(f"⚠️ Deneme {i+1}/5: {result['error']}")
-                time.sleep(30) # 30 saniye bekle (Daha uzun)
-            else:
-                print(f"⚠️ Bilinmeyen Yanıt: {result}")
-                time.sleep(5)
-                
-        except Exception as e:
-            print(f"⚠️ Bağlantı Hatası: {e}")
-            time.sleep(10)
-            
-    return "Yapay Zeka 5 denemeye rağmen yanıt veremedi. Hugging Face sunucuları şu an aşırı yoğun."
+    user_prompt = f"""
+    HABERLER:
+    {text_data}
+    
+    GÖREV:
+    Kısa ve net bir "Günlük İstihbarat Özeti" oluştur.
+    
+    FORMAT:
+    1. 🚨 GÜNÜN KRİTİK OLAYI
+    2. 🌍 BÖLGESEL DİNAMİKLER (Ortadoğu/Batı)
+    3. 🇹🇷 TÜRKİYE PERSPEKTİFİ (Riskler ve Fırsatlar)
+    """
+
+    try:
+        completion = client.chat.completions.create(
+            model="llama3-8b-8192", # Meta'nın çok hızlı ve zeki modeli
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=1000,
+        )
+        return completion.choices[0].message.content
+        
+    except Exception as e:
+        return f"Yapay Zeka Hatası: {e}"
 
 # ==========================================
 # 5. MAİL GÖNDERME
@@ -116,15 +101,15 @@ def send_email(report_body):
     msg = MIMEMultipart()
     msg['From'] = GMAIL_USER
     msg['To'] = ALICI_MAIL
-    msg['Subject'] = f"🛡️ GÜNLÜK İSTİHBARAT RAPORU - {datetime.date.today()}"
+    msg['Subject'] = f"⚡ GÜNLÜK İSTİHBARAT (Llama-3) - {datetime.date.today()}"
     
     html_content = f"""
-    <div style="font-family: Arial, sans-serif; color: #333;">
-        <h2 style="color: #d35400;">🌍 GÜNLÜK SİYASİ ANALİZ (Zephyr AI)</h2>
+    <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+        <h2 style="color: #b71c1c;">🌍 GÜNLÜK SİYASİ ANALİZ</h2>
         <hr>
-        <pre style="white-space: pre-wrap; font-family: inherit; font-size: 14px;">{report_body}</pre>
+        <div style="white-space: pre-wrap;">{report_body}</div>
         <br>
-        <p style="font-size: 12px; color: #777;"><i>Bu rapor GitHub Actions tarafından otomatik üretilmiştir.</i></p>
+        <p style="font-size: 12px; color: #888;"><i>Power by Groq & Llama-3</i></p>
     </div>
     """
     
