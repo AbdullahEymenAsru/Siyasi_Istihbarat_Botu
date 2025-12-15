@@ -3,20 +3,20 @@ import requests
 import smtplib
 import os
 import datetime
-import time # Bekleme yapmak için gerekli
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # ==========================================
-# 1. GİRDİLER
+# 1. AYARLAR
 # ==========================================
 HF_API_KEY = os.environ["HF_API_KEY"]
 GMAIL_USER = os.environ["GMAIL_USER"]
 GMAIL_PASSWORD = os.environ["GMAIL_PASSWORD"]
 ALICI_MAIL = os.environ["ALICI_MAIL"]
 
-# Model: Mistral-7B (Daha kararlı versiyonu)
-API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"
+# MODEL DEĞİŞİKLİĞİ: Zephyr-7B (Mistral tabanlıdır ama daha hızlı tepki verir)
+API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
 HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 
 # ==========================================
@@ -37,7 +37,6 @@ rss_sources = {
 def fetch_news():
     print("📡 Veri toplanıyor...")
     buffer = ""
-    # Bot engeline takılmamak için tarayıcı kimliği
     chrome_agent = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     
     for source, url in rss_sources.items():
@@ -58,50 +57,57 @@ def fetch_news():
 # 4. YAPAY ZEKA ANALİZİ (GÜÇLENDİRİLMİŞ)
 # ==========================================
 def query_ai(text_data):
-    print("🧠 Yapay Zeka uyanıyor ve analiz yapıyor...")
-    
-    prompt = f"""[INST] Sen uzman bir siyaset bilimcisin. Aşağıdaki haber başlıklarını analiz et ve Türkçe bir özet rapor yaz.
-    
-    HABERLER:
-    {text_data}
-    
-    GÖREV:
-    Bu haberlere dayanarak kısa bir "Durum Raporu" oluştur.
-    1. GÜNÜN OLAYI
-    2. BÖLGESEL DURUM
-    3. TÜRKİYE ANALİZİ
-    [/INST]"""
+    print("🧠 Yapay Zeka (Zephyr) analiz yapıyor...")
+
+    # ÖNLEM: Eğer metin çok uzunsa API hata verir (503 veya 400).
+    # Metni son 3000 karakterle sınırlayalım.
+    if len(text_data) > 3000:
+        text_data = text_data[:3000] + "..."
+
+    prompt = f"""<|system|>
+Sen uzman bir siyaset bilimcisin. Aşağıdaki haber başlıklarını analiz et ve Türkçe bir özet rapor yaz.
+</s>
+<|user|>
+HABERLER:
+{text_data}
+
+GÖREV:
+Bu haberlere dayanarak kısa bir "Durum Raporu" oluştur.
+1. GÜNÜN OLAYI
+2. BÖLGESEL DURUM
+3. TÜRKİYE ANALİZİ
+</s>
+<|assistant|>"""
     
     payload = {
         "inputs": prompt,
-        "parameters": {"max_new_tokens": 1000, "return_full_text": False},
-        "options": {"wait_for_model": True} # <--- ÖNEMLİ: Modelin uyanmasını bekle
+        "parameters": {"max_new_tokens": 800, "return_full_text": False},
+        "options": {"wait_for_model": True}
     }
     
-    # 3 KERE DENEME MEKANİZMASI (RETRY LOGIC)
-    for i in range(3):
+    # 5 KERE DENEME MEKANİZMASI (Daha İnatçı)
+    for i in range(5):
         try:
             response = requests.post(API_URL, headers=HEADERS, json=payload)
-            response_json = response.json()
+            result = response.json()
             
-            # Eğer başarılıysa metni döndür
-            if isinstance(response_json, list) and 'generated_text' in response_json[0]:
-                return response_json[0]['generated_text']
+            # Başarılı cevap kontrolü
+            if isinstance(result, list) and 'generated_text' in result[0]:
+                return result[0]['generated_text']
             
-            # Eğer model yükleniyorsa bekle
-            if 'error' in response_json and 'loading' in response_json['error']:
-                print(f"⚠️ Model yükleniyor... Bekleniyor ({i+1}/3)")
-                time.sleep(20) # 20 saniye bekle tekrar dene
-                continue
+            # Model yükleniyorsa bekle
+            if isinstance(result, dict) and 'error' in result:
+                print(f"⚠️ Deneme {i+1}/5: {result['error']}")
+                time.sleep(30) # 30 saniye bekle (Daha uzun)
+            else:
+                print(f"⚠️ Bilinmeyen Yanıt: {result}")
+                time.sleep(5)
                 
-            # Başka bir hata varsa yazdır
-            print(f"⚠️ API Hatası: {response_json}")
-            
         except Exception as e:
             print(f"⚠️ Bağlantı Hatası: {e}")
-            time.sleep(5)
+            time.sleep(10)
             
-    return "Yapay Zeka şu an aşırı yoğun veya yanıt vermedi. (Ham veriler yukarıdadır)"
+    return "Yapay Zeka 5 denemeye rağmen yanıt veremedi. Hugging Face sunucuları şu an aşırı yoğun."
 
 # ==========================================
 # 5. MAİL GÖNDERME
@@ -112,10 +118,9 @@ def send_email(report_body):
     msg['To'] = ALICI_MAIL
     msg['Subject'] = f"🛡️ GÜNLÜK İSTİHBARAT RAPORU - {datetime.date.today()}"
     
-    # HTML Formatı (Daha güzel görünüm için)
     html_content = f"""
     <div style="font-family: Arial, sans-serif; color: #333;">
-        <h2 style="color: #2c3e50;">🌍 GÜNLÜK SİYASİ ANALİZ</h2>
+        <h2 style="color: #d35400;">🌍 GÜNLÜK SİYASİ ANALİZ (Zephyr AI)</h2>
         <hr>
         <pre style="white-space: pre-wrap; font-family: inherit; font-size: 14px;">{report_body}</pre>
         <br>
@@ -131,9 +136,9 @@ def send_email(report_body):
         server.login(GMAIL_USER, GMAIL_PASSWORD)
         server.sendmail(GMAIL_USER, ALICI_MAIL, msg.as_string())
         server.quit()
-        print("✅ E-posta başarıyla gönderildi!")
+        print("✅ E-posta gönderildi!")
     except Exception as e:
-        print(f"❌ Mail Gönderme Hatası: {e}")
+        print(f"❌ Mail Hatası: {e}")
 
 # ==========================================
 # ÇALIŞTIR
@@ -143,6 +148,5 @@ if __name__ == "__main__":
     if len(raw_data) > 20:
         report = query_ai(raw_data)
         send_email(report)
-        print("İşlem Tamam.")
     else:
-        print("Veri toplanamadı.")
+        print("Veri yok.")
