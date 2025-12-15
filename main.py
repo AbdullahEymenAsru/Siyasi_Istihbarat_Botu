@@ -15,7 +15,6 @@ GMAIL_USER = os.environ["GMAIL_USER"]
 GMAIL_PASSWORD = os.environ["GMAIL_PASSWORD"]
 ALICI_MAIL = os.environ["ALICI_MAIL"]
 
-# Groq İstemcisini Başlat
 client = Groq(api_key=GROQ_API_KEY)
 
 # ==========================================
@@ -31,12 +30,11 @@ rss_sources = {
 }
 
 # ==========================================
-# 3. VERİ TOPLAMA
+# 3. VERİ TOPLAMA (LİNKLERİ YAKALAMA)
 # ==========================================
 def fetch_news():
-    print("📡 Veri toplanıyor...")
+    print("📡 Veri ve Linkler toplanıyor...")
     buffer = ""
-    # Bot korumalarını aşmak için User-Agent
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     
     for source, url in rss_sources.items():
@@ -44,52 +42,66 @@ def fetch_news():
             resp = requests.get(url, headers=headers, timeout=10)
             feed = feedparser.parse(resp.content)
             if feed.entries:
-                buffer += f"\n--- KAYNAK: {source} ---\n"
-                for entry in feed.entries[:2]:
+                for entry in feed.entries[:3]:
                     title = entry.title
-                    buffer += f"- {title}\n"
+                    link = entry.link # <--- LİNKİ BURADA YAKALIYORUZ
+                    
+                    # AI'ya veriyi şu formatta vereceğiz:
+                    # [BBC World] Başlık | URL: http://...
+                    buffer += f"[{source}] {title} | URL: {link}\n"
         except:
             continue
     return buffer
 
 # ==========================================
-# 4. YAPAY ZEKA ANALİZİ (GÜNCEL MODEL)
+# 4. YAPAY ZEKA ANALİZİ (HTML LİNK FORMATI)
 # ==========================================
 def query_ai(text_data):
-    print("🧠 Yapay Zeka Analiz Yapıyor (Llama 3.3)...")
+    print("🧠 Yapay Zeka Linkleri İşliyor...")
     
-    if len(text_data) > 5000:
-        text_data = text_data[:5000]
+    if len(text_data) > 8000: # Context window geniş
+        text_data = text_data[:8000]
 
-    system_prompt = """Sen uzman bir Uluslararası İlişkiler analistisin. 
-    Verilen haber başlıklarını sentezle ve Türkiye odaklı bir stratejik rapor yaz.
-    Sadece haberleri çevirme, arkasındaki anlamı ve stratejik riski yorumla."""
+    system_prompt = """Sen uzman bir İstihbarat Analistisin. 
+    Görevin: Haberleri analiz etmek ve stratejik bir özet çıkarmak.
+    
+    ÇOK ÖNEMLİ KURAL (LİNK VERME):
+    Analizinde bahsettiğin her kritik olayın kaynağına LİNK vermek zorundasın.
+    HTML formatı kullanmalısın.
+    Örnek: "İsrail saldırıları arttırdı (<a href='http://...'>Al Jazeera</a>)."
+    veya
+    "SETA'nın <a href='http://...'>son raporuna göre</a> Türkiye..."
+    
+    Asla uydurma link verme. Sana verilen "URL:" kısmındaki linki kullan."""
     
     user_prompt = f"""
-    HABERLER:
+    HAM VERİLER VE LİNKLER:
     {text_data}
     
     GÖREV:
-    Kısa ve net bir "Günlük İstihbarat Özeti" oluştur.
+    Bu verileri kullanarak "Tıklanabilir Kaynaklı Durum Raporu" yaz.
+    Raporun dili Türkçe olsun.
     
-    RAPOR ŞABLONU:
-    1. 🚨 GÜNÜN KRİTİK GELİŞMESİ
-    2. 🌍 KÜRESEL DENGELER (ABD/Rusya/Çin Hamleleri)
-    3. 🇹🇷 TÜRKİYE İÇİN RİSK VE FIRSATLAR
+    RAPOR FORMATI (HTML KULLAN):
+    <h3>🚨 GÜNÜN MANŞETİ</h3>
+    <p>...</p>
+    
+    <h3>🌍 KÜRESEL DENGELER</h3>
+    <p>...</p>
+    
+    <h3>🇹🇷 TÜRKİYE PERSPEKTİFİ</h3>
+    <p>...</p>
     """
 
     try:
         completion = client.chat.completions.create(
-            # --- DEĞİŞEN KISIM BURASI ---
-            # 'llama3-8b-8192' yerine en yeni ve güçlü modeli kullanıyoruz:
-            model="llama-3.3-70b-versatile", 
-            
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.6,
-            max_tokens=1500,
+            temperature=0.4,
+            max_tokens=2000,
         )
         return completion.choices[0].message.content
         
@@ -103,16 +115,26 @@ def send_email(report_body):
     msg = MIMEMultipart()
     msg['From'] = GMAIL_USER
     msg['To'] = ALICI_MAIL
-    msg['Subject'] = f"⚡ GÜNLÜK İSTİHBARAT RAPORU - {datetime.date.today()}"
+    msg['Subject'] = f"🔗 TIKLANABİLİR İSTİHBARAT RAPORU - {datetime.date.today()}"
     
+    # Mail gövdesini güzelleştiriyoruz
     html_content = f"""
-    <div style="font-family: Arial, sans-serif; color: #2c3e50; line-height: 1.6;">
-        <h2 style="color: #c0392b;">🌍 GÜNLÜK SİYASİ ANALİZ</h2>
-        <hr>
-        <div style="white-space: pre-wrap; font-size: 14px;">{report_body}</div>
-        <br>
-        <p style="font-size: 11px; color: #95a5a6;"><i>Analiz Motoru: Llama 3.3 (70B) via Groq</i></p>
-    </div>
+    <html>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <div style="max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+            <h2 style="color: #2c3e50; text-align: center;">🌍 GÜNLÜK SİYASİ ANALİZ</h2>
+            <hr style="border: 0; border-top: 1px solid #eee;">
+            
+            <div>{report_body}</div>
+            
+            <br>
+            <hr style="border: 0; border-top: 1px solid #eee;">
+            <p style="font-size: 11px; text-align: center; color: #999;">
+                <i>Bu rapor Groq (Llama 3.3) kullanılarak oluşturulmuştur. Kaynaklara tıklayarak orijinallerini okuyabilirsiniz.</i>
+            </p>
+        </div>
+    </body>
+    </html>
     """
     
     msg.attach(MIMEText(html_content, 'html'))
