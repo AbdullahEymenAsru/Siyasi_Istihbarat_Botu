@@ -10,7 +10,7 @@ import re
 import networkx as nx
 import matplotlib.pyplot as plt
 import edge_tts
-import trafilatura # <--- YENİ KÜTÜPHANE (TAM METİN İÇİN)
+import trafilatura
 from groq import Groq
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -32,175 +32,174 @@ client = Groq(api_key=GROQ_API_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 plt.switch_backend('Agg')
 
-# KAYNAKLAR
+# --- DEVASA STRATEJİK KAYNAK HAVUZU (v26.0 - TELEGRAM GENİŞLETİLDİ) ---
 rss_sources = {
+    # --- BATI VE AVRUPA (NATO MERKEZLİ) ---
     'BBC World': 'http://feeds.bbci.co.uk/news/world/rss.xml',
     'CNN International': 'http://rss.cnn.com/rss/edition.rss',
     'Voice of America (VOA)': 'https://www.voanews.com/api/zg$oq_et$p',
     'Foreign Policy': 'https://foreignpolicy.com/feed/',
     'Deutsche Welle': 'https://rss.dw.com/xml/rss-en-all',
+    
+    # --- TÜRKİYE VE ORTADOĞU ---
     'TRT World': 'https://www.trtworld.com/rss',
     'Turkiye Arastirmalari Vakfi': 'https://tav.org.tr/feed/',
     'SETA Vakfi': 'https://www.setav.org/feed/',
     'Al Jazeera': 'https://www.aljazeera.com/xml/rss/all.xml',
     'Times of Israel': 'https://www.timesofisrael.com/feed/',
     'Tehran Times': 'https://www.tehrantimes.com/rss',
+    
+    # --- ASYA - PASİFİK VE DOĞU BLOKU ---
     'TASS (Russia)': 'https://tass.com/rss/v2.xml',
     'China Daily': 'https://www.chinadaily.com.cn/rss/world_rss.xml',
     'Yonhap (Korea)': 'https://en.yna.co.kr/RSS/news.xml',
-    'Dawn (Pakistan)': 'https://www.dawn.com/feeds/home/',
-    'Times of India': 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms'
+    'Times of India': 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
+
+    # --- 🔥 TELEGRAM & OSINT (HOT ZONE - YENİ EKLENENLER) ---
+    # Not: RSSHub köprüsü kullanılarak Telegram kanalları okunuyor.
+    
+    # 1. TÜRKİYE MERKEZLİ OSINT & SAVUNMA
+    'Clash Report (Telegram)': 'https://rsshub.app/telegram/channel/clashreport', # Türk kökenli en hızlı küresel OSINT
+    'SavunmaSanayiST (Telegram)': 'https://rsshub.app/telegram/channel/savunmasanayist', # Türk Savunma Sanayii
+    
+    # 2. RUSYA - UKRAYNA SAHASI
+    'Rybar (Telegram)': 'https://rsshub.app/telegram/channel/rybar', # Rus tarafının en detaylı askeri harita ve analiz kanalı
+    'Intel Slava (Telegram)': 'https://rsshub.app/telegram/channel/intelslava', # Rus perspektifi (Sansürsüz)
+    'Zelenskiy Official (Telegram)': 'https://rsshub.app/telegram/channel/V_Zelenskiy_official', # Ukrayna Resmi
+    
+    # 3. ORTADOĞU (GAZZE/İSRAİL)
+    'Gaza Now (Telegram)': 'https://rsshub.app/telegram/channel/gazaalannet', # Gazze Sahası
+    'IDF Official (Telegram)': 'https://rsshub.app/telegram/channel/idfofficial', # İsrail Ordusu Resmi
+    
+    # 4. KÜRESEL & ABD SON DAKİKA
+    'Insider Paper (Telegram)': 'https://rsshub.app/telegram/channel/insiderpaper', # ABD merkezli çok hızlı son dakika
+    'Geopolitics Live (Telegram)': 'https://rsshub.app/telegram/channel/geopolitics_live', # Küresel jeopolitik (Çin/Rusya yanlısı bakış)
+    'Bellincat (OSINT)': 'https://www.bellingcat.com/feed/' # Araştırmacı Gazetecilik
 }
 
-KRITIK_AKTORLER = ["Turkey", "Türkiye", "Erdoğan", "Fidan", "Biden", "Trump", "Putin", "Xi Jinping", "Zelensky", "Netanyahu", "Hamas", "NATO", "EU", "Iran", "China", "Russia", "Pakistan", "India", "Korea"]
+KRITIK_AKTORLER = ["Turkey", "Türkiye", "Erdoğan", "Fidan", "Biden", "Trump", "Putin", "Xi Jinping", "Zelensky", "Netanyahu", "Hamas", "NATO", "EU", "Iran", "China", "Russia", "Pakistan", "India", "Korea", "IDF", "Wagner", "TSK", "Pentagon"]
 
 # ==========================================
-# 2. AJAN 1: RESEARCHER (VERİ TOPLAYICI & SCRAPER) 🕷️
+# 2. AJAN 1: RESEARCHER (VERİ TOPLAYICI & SCRAPER)
 # ==========================================
 def calculate_priority_score(title, summary):
     score = 0
     text = (title + " " + summary).lower()
     
-    high_priority = ["nuclear", "war", "missile", "attack", "gaza", "ukraine", "taiwan", "terror", "bomb", "sondakika"]
+    high_priority = ["nuclear", "war", "missile", "attack", "gaza", "ukraine", "taiwan", "terror", "bomb", "footage", "video", "alert", "breaking", "sondakika", "operasyon", "şehit", "neutralized"]
     if any(w in text for w in high_priority): score += 50
     
-    med_priority = ["turkey", "erdogan", "nato", "putin", "biden", "trump", "iran", "israel", "defense", "military"]
+    med_priority = ["turkey", "erdogan", "nato", "putin", "biden", "trump", "iran", "israel", "defense", "military", "troops", "bayraktar", "tb2", "kızılelma", "siha"]
     if any(w in text for w in med_priority): score += 30
     
-    low_priority = ["trade", "economy", "deal", "meeting", "eu", "energy", "oil"]
+    low_priority = ["trade", "economy", "deal", "meeting", "eu", "energy"]
     if any(w in text for w in low_priority): score += 10
     
     return score
 
 def get_full_text(url):
-    """Linke gider ve haberin tamamını indirir (Scraping)"""
+    """Linke gider ve haberin tamamını indirir"""
+    if "t.me" in url or "telegram" in url: return None
     try:
         downloaded = trafilatura.fetch_url(url)
         if downloaded:
             text = trafilatura.extract(downloaded)
-            if text:
-                # Çok uzunsa kırp (Token limitini korumak için)
-                return text[:2500] 
-    except:
-        pass
+            if text: return text[:2500] 
+    except: pass
     return None
 
 def fetch_news():
-    print("🕵️‍♂️ AJAN 1: Genişletilmiş ağ taranıyor ve KRİTİK haberler okunuyor...")
+    print("🕵️‍♂️ AJAN 1: Telegram kanalları ve Haber Siteleri taranıyor...")
     all_news = []
     headers = {'User-Agent': 'Mozilla/5.0'}
     
-    # 1. ADIM: RSS TARAMA VE PUANLAMA
     for source, url in rss_sources.items():
         try:
-            resp = requests.get(url, headers=headers, timeout=20)
+            resp = requests.get(url, headers=headers, timeout=30)
             feed = feedparser.parse(resp.content)
             if feed.entries:
                 for i, entry in enumerate(feed.entries[:3]):
                     title = entry.title
                     link = entry.link
-                    summary = entry.summary[:200] if hasattr(entry, 'summary') else ""
+                    summary = entry.summary[:300] if hasattr(entry, 'summary') else ""
                     
+                    if source.endswith("(Telegram)") and len(title) < 5:
+                        title = summary[:50] + "..."
+
                     score = calculate_priority_score(title, summary)
-                    if i == 0: score += 10 
+                    if "Telegram" in source: score += 15 # Telegram bonusu
+                    elif i == 0: score += 10 
                     
                     all_news.append({"source": source, "title": title, "link": link, "summary": summary, "score": score})
-        except: continue
+        except Exception as e:
+            print(f"⚠️ {source} erişim hatası: {e}")
+            continue
 
-    # 2. ADIM: EN KRİTİK HABERLERİ SEÇME
     all_news.sort(key=lambda x: x['score'], reverse=True)
-    top_news = all_news[:6] # En önemli 6 haberi seç
+    top_news = all_news[:7] 
     
     buffer = ""
     raw_links_html = "<ul>"
-    
-    # 3. ADIM: SEÇİLENLER İÇİN TAM METİN İNDİRME (SCRAPING)
-    print("🕷️  AJAN 1: Seçilen haberlerin detaylarına iniliyor (Deep Dive)...")
-    
-    current_keywords = [] # Hafıza araması için anahtar kelimeler biriktiriyoruz
+    current_keywords = []
+
+    print("🕷️  AJAN 1: Seçilenlerin detayına iniliyor...")
 
     for news in top_news:
         full_text = get_full_text(news['link'])
-        
-        # Eğer tam metin çekebildiysek onu kullan, yoksa özeti kullan
         content_to_use = full_text if full_text else news['summary']
-        content_type = "TAM METİN" if full_text else "ÖZET"
+        content_type = "TAM METİN" if full_text else "ÖZET/MESAJ"
         
-        icon = "🚨" if news['score'] >= 50 else "🔹"
+        icon = "🔥" if "Telegram" in news['source'] else ("🚨" if news['score'] >= 50 else "🔹")
+        
         buffer += f"[{news['source']}] {icon} {news['title']} ({content_type})\nİÇERİK: {content_to_use[:1000]}...\nURL: {news['link']}\n\n"
-        
         raw_links_html += f"<li><b>{news['source']}:</b> <a href='{news['link']}'>{news['title']}</a></li>"
-        
-        # Başlıktaki kelimeleri hafıza için sakla
         current_keywords.extend(news['title'].lower().split())
     
     raw_links_html += "</ul>"
-    
     return buffer, raw_links_html, current_keywords
 
 # ==========================================
-# 3. AKILLI HAFIZA (CONTEXT-AWARE MEMORY) 🧠
+# 3. AKILLI HAFIZA
 # ==========================================
 def read_historical_memory(current_keywords):
-    print("🧠 HAFIZA MODÜLÜ: Geçmişte bugüne benzer olaylar aranıyor...")
-    
+    print("🧠 HAFIZA MODÜLÜ: Arşiv taranıyor...")
     memory_buffer = ""
     files = glob.glob("ARSIV/*.md")
     files.sort(key=os.path.getmtime, reverse=True)
     
-    # Gereksiz kelimeleri temizle
-    stop_words = ["the", "in", "at", "on", "for", "to", "and", "a", "of", "is", "with", "haber", "son", "dakika"]
+    stop_words = ["the", "in", "at", "on", "for", "to", "and", "a", "of", "is", "with", "haber", "son", "dakika", "breaking", "news"]
     keywords = [k for k in current_keywords if len(k) > 4 and k not in stop_words]
-    keywords = list(set(keywords))[:5] # En önemli 5 kelime
+    keywords = list(set(keywords))[:5]
     
-    print(f"   -> Aranan Kavramlar: {keywords}")
-
-    found_count = 0
     total_chars = 0
     SAFE_LIMIT = 12000 
     
     for file_path in files:
         if total_chars > SAFE_LIMIT: break
-        
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
             filename = os.path.basename(file_path)
-            
-            # RELEVANCE PUANI: Dosyada anahtar kelimeler geçiyor mu?
             relevance = sum(content.lower().count(k) for k in keywords)
-            
-            # Eğer alakalıysa veya çok yeniyse (son 2 gün) hafızaya al
             is_recent = (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(file_path))).days < 2
             
             if relevance > 0 or is_recent:
-                # İlgili kısımları al (Tamamını değil)
                 short_content = content[:2000]
-                memory_buffer += f"\n--- GEÇMİŞ RAPOR ({filename}) [Alaka: {relevance}] ---\n{short_content}...\n"
+                memory_buffer += f"\n--- GEÇMİŞ RAPOR ({filename}) ---\n{short_content}...\n"
                 total_chars += len(short_content)
-                found_count += 1
                 
     if not memory_buffer: return "Arşivde ilgili kayıt bulunamadı."
-    print(f"   -> {found_count} adet ilgili geçmiş rapor bulundu.")
     return memory_buffer
 
 # ==========================================
-# 4. YENİ: YAPAY ZEKA TABANLI HARİTA 🗺️ (AJAN 5)
+# 4. YENİ: YAPAY ZEKA TABANLI HARİTA
 # ==========================================
 def draw_network_graph(text_data):
     print("🗺️ AJAN 5: İlişkileri analiz edip harita çiziyor...")
-    
     prompt = f"""
-    Aşağıdaki haber metnini analiz et ve ülkeler/liderler arasındaki ilişkileri çıkar.
-    Sadece şu formatta çıktı ver: "Aktör1,Aktör2"
-    Örnek:
-    USA,China
-    Turkey,Greece
-    Putin,Biden
-    
-    METİN:
-    {text_data[:4000]}
+    Haber metnini analiz et, ülkeler/liderler arasındaki ilişkileri çıkar.
+    Format: "Aktör1,Aktör2"
+    METİN: {text_data[:4000]}
     """
-    
     try:
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -208,8 +207,7 @@ def draw_network_graph(text_data):
             temperature=0.1
         )
         relations = completion.choices[0].message.content.split('\n')
-    except:
-        relations = ["Türkiye,Dünya"] 
+    except: relations = ["Türkiye,Dünya"] 
 
     G = nx.Graph()
     for line in relations:
@@ -225,7 +223,7 @@ def draw_network_graph(text_data):
 
     plt.figure(figsize=(12, 8))
     pos = nx.spring_layout(G, k=1.5) 
-    nx.draw_networkx_nodes(G, pos, node_size=2500, node_color='#2c3e50', alpha=0.9)
+    nx.draw_networkx_nodes(G, pos, node_size=2500, node_color='#c0392b', alpha=0.9)
     nx.draw_networkx_edges(G, pos, width=2, alpha=0.6, edge_color='#bdc3c7')
     nx.draw_networkx_labels(G, pos, font_size=9, font_color='white', font_weight='bold')
     plt.title("GÜNLÜK JEOPOLİTİK ETKİLEŞİM AĞI", fontsize=16, color='#c0392b')
@@ -243,8 +241,8 @@ def run_agent_workflow(current_data, historical_memory):
     print("⏳ AJAN 2 (HISTORIAN): Çalışıyor...")
     historian_prompt = f"""
     Sen Tarihçisin. Bugünün haberleri: {current_data[:5000]}
-    Geçmiş (Arşivden Bulunanlar): {historical_memory}
-    Görevin: Geçmişteki benzer olaylarla bugünü kıyasla. Trendleri yaz.
+    Geçmiş (Arşiv): {historical_memory}
+    Görevin: Geçmişteki benzer olaylarla bugünü kıyasla.
     """
     history_analysis = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -254,7 +252,8 @@ def run_agent_workflow(current_data, historical_memory):
     print("⚖️ AJAN 3 (THE CRITIC): Çalışıyor...")
     critic_prompt = f"""
     Sen 'Kızıl Takım' liderisin. Veriler: {current_data[:5000]}
-    Batı ve Doğu medyası arasındaki farkları sertçe eleştir.
+    TELEGRAM/OSINT verileri ile RESMİ MEDYA (BBC/CNN) arasındaki farkları bul.
+    Sokaktaki gerçek ile resmi açıklama çelişiyor mu?
     """
     critic_analysis = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -267,24 +266,23 @@ def run_agent_workflow(current_data, historical_memory):
     
     KURALLAR:
     1. LİNK ZORUNLU: Olayların yanına (<a href='URL'>Kaynak</a>) ekle.
-    2. PROFESYONEL DİL: "Realist Kanat" yerine "JEOPOLİTİK RİSK ANALİZİ" gibi terimler kullan.
+    2. PROFESYONEL DİL: "Realist Kanat" yerine "JEOPOLİTİK RİSK ANALİZİ" kullan.
+    3. OSINT VURGUSU: Telegram'dan gelen ham bilgileri özellikle belirt.
     
     BÖLÜMLER:
-    1. 🔥 JEOPOLİTİK RİSK VE TEHDİTLER (Eski Realist Kanat)
-    2. 🤝 DİPLOMASİ VE EKONOMİK FIRSATLAR (Eski Liberal Kanat)
-    3. 👁️ İSTİHBARAT SAVAŞLARI (Propaganda Analizi)
-    4. 📜 TARİHSEL HAFIZA (Arşiv Analizi)
-    5. 🇹🇷 ANKARA İÇİN STRATEJİK TAVSİYE
-    6. 🎲 GELECEK SENARYOLARI (% Olasılıklar)
+    1. 🔥 SAHADAN SON DAKİKA (Telegram/OSINT Verileri)
+    2. 🌍 JEOPOLİTİK RİSK VE TEHDİTLER (Resmi Medya Analizi)
+    3. 🤝 DİPLOMASİ VE EKONOMİ
+    4. 👁️ PROPAGANDA VE GERÇEKLİK (Kızıl Takım Notları)
+    5. 📜 TARİHSEL HAFIZA
+    6. 🇹🇷 ANKARA İÇİN STRATEJİK TAVSİYE
+    7. 🎲 GELECEK SENARYOLARI
     """
     
     final_user_prompt = f"""
-    HAM VERİLER (TAM METİN İÇERİR): 
-    {current_data[:7000]}
-    
-    TARİHÇİ VE DENETÇİ NOTLARI: 
-    {history_analysis}
-    {critic_analysis}
+    HAM VERİLER: {current_data[:7000]}
+    TARİHÇİ RAPORU: {history_analysis}
+    DENETÇİ NOTU: {critic_analysis}
     """
     
     final_report = client.chat.completions.create(
@@ -348,7 +346,7 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
             html_content = f"""
             <html><body style='font-family: Arial, sans-serif; color:#333;'>
                 <h1 style="color:#2c3e50; text-align:center;">🛡️ SAVAŞ ODASI</h1>
-                <p style="text-align:center;"><i>"Büyük Veri Analizli Stratejik Rapor"</i></p>
+                <p style="text-align:center;"><i>"Telegram/OSINT Destekli Analiz"</i></p>
                 <hr>
                 <center>
                     <h3>🕸️ GÜNLÜK ETKİLEŞİM AĞI</h3>
@@ -386,12 +384,8 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
         print(f"❌ Hata: {e}")
 
 if __name__ == "__main__":
-    # 1. Haberleri Çek (Tam Metin Scraping ile) ve Anahtar Kelimeleri Al
     raw_data, raw_links, current_keywords = fetch_news()
-    
-    # 2. Akıllı Hafızayı Çalıştır (Bugünün kelimelerine göre arşiv tara)
     memory = read_historical_memory(current_keywords)
-    
     if len(raw_data) > 20:
         report = run_agent_workflow(raw_data, memory)
         graph_map = draw_network_graph(raw_data)
