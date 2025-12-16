@@ -32,7 +32,7 @@ client = Groq(api_key=GROQ_API_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 plt.switch_backend('Agg')
 
-# --- KAYNAK HAVUZU (v29.0) ---
+# --- KAYNAK HAVUZU ---
 rss_sources = {
     'BBC World': 'http://feeds.bbci.co.uk/news/world/rss.xml',
     'CNN International': 'http://rss.cnn.com/rss/edition.rss',
@@ -60,8 +60,6 @@ rss_sources = {
     'Geopolitics Live (Telegram)': 'https://rsshub.app/telegram/channel/geopolitics_live', 
     'Bellincat (OSINT)': 'https://www.bellingcat.com/feed/' 
 }
-
-KRITIK_AKTORLER = ["Turkey", "Türkiye", "Erdoğan", "Fidan", "Biden", "Trump", "Putin", "Xi Jinping", "Zelensky", "Netanyahu", "Hamas", "NATO", "EU", "Iran", "China", "Russia", "Pakistan", "India", "Korea", "IDF", "Wagner", "TSK", "Pentagon"]
 
 # ==========================================
 # 2. AJAN 1: RESEARCHER
@@ -181,25 +179,32 @@ def draw_network_graph(text_data):
     return filename
 
 # ==========================================
-# 5. AJANLI SİMÜLASYON (CSS RENK DÜZELTMESİ EKLENDİ) 🔥
+# 5. AJANLI SİMÜLASYON (DİL DÜZELTMELİ) 🔥
 # ==========================================
 def run_agent_workflow(current_data, historical_memory):
     
     print("⏳ AJAN 2 ve 3 çalışıyor...")
+    # Tarihçi ve Eleştirmen için Türkçe zorlaması
     historian_report = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": f"Tarihçi olarak bugünkü verileri ({current_data[:4000]}) geçmişle ({historical_memory}) kıyasla."}]
+        messages=[{"role": "user", "content": f"Tarihçi olarak bugünkü verileri ({current_data[:4000]}) geçmişle ({historical_memory}) kıyasla. Yanıtı SADECE Türkçe ver."}]
     ).choices[0].message.content
 
     critic_report = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": f"Kızıl Takım olarak ({current_data[:4000]}) verilerindeki Batı/Doğu/OSINT çelişkilerini sertçe eleştir."}]
+        messages=[{"role": "user", "content": f"Kızıl Takım olarak ({current_data[:4000]}) verilerindeki Batı/Doğu/OSINT çelişkilerini sertçe eleştir. Yanıtı SADECE Türkçe ver."}]
     ).choices[0].message.content
 
-    print("✍️ AJAN 4 (CHIEF EDITOR): Nihai raporu ŞABLONA GÖRE yazıyor...")
+    print("✍️ AJAN 4 (CHIEF EDITOR): Nihai raporu KATI KURALLARA GÖRE yazıyor...")
     
-    # --- YENİ HTML ŞABLONU (CSS Color Fix Eklendi) ---
-    final_system_prompt = """Sen Savaş Odası Başkanısın. Raporun okunabilirliği her şeyden önemlidir.
+    # --- YENİ PROMPT (Dil Sızmasını Önleyen) ---
+    final_system_prompt = """Sen Savaş Odası Başkanısın. Raporun dili %100 AKICI VE RESMİ İSTANBUL TÜRKÇESİ olmalıdır.
+    
+    KATI DİL KURALLARI (ASLA İHLAL ETME):
+    1. ASLA yabancı kelime kullanma (Örn: 'Conflict' yerine 'Çatışma', 'Continuar' yerine 'Devam eden' yaz).
+    2. ASLA Çince (东), Rusça veya İspanyolca karakter kullanma.
+    3. Kelimeleri birleştirme (Örn: 'buConflict' YASAK, 'bu çatışma' DOĞRU).
+    4. Cümleler düşük olmamalı, haber spikeri gibi net olmalı.
     
     KATI BİÇİM KURALLARI (FORMAT):
     1. ASLA düz paragraf yazma. Her şeyi <ul> ve <li> etiketleri ile maddeler halinde yaz.
@@ -233,9 +238,9 @@ def run_agent_workflow(current_data, historical_memory):
       <li>👉 <b>Türkiye</b> bu durumda... yapmalıdır.</li>
     </ul>
     
-    <div style="background-color:#fef9e7; color:#333333; padding:10px; border:1px solid #f1c40f; border-radius:5px;">
+    <div style="background-color:#fef9e7; color: black !important; padding:10px; border:1px solid #f1c40f; border-radius:5px;">
     <b style="color:#d35400;">🎲 GELECEK SENARYOLARI:</b>
-    <ul style="color:#333333;">
+    <ul style="color: black !important;">
        <li>%60 İhtimalle: ...</li>
        <li>%30 İhtimalle: ...</li>
     </ul>
@@ -246,6 +251,8 @@ def run_agent_workflow(current_data, historical_memory):
     HAM VERİLER: {current_data[:7000]}
     TARİHÇİ: {historian_report}
     DENETÇİ: {critic_report}
+    
+    Yukarıdaki verileri analiz et ve SADECE TÜRKÇE rapor yaz.
     """
     
     final_report = client.chat.completions.create(
@@ -254,13 +261,13 @@ def run_agent_workflow(current_data, historical_memory):
             {"role": "system", "content": final_system_prompt},
             {"role": "user", "content": final_user_prompt}
         ],
-        temperature=0.4
+        temperature=0.2 # <-- DÜŞÜRÜLDÜ (Daha az halüsinasyon, daha net dil)
     ).choices[0].message.content
     
     return final_report
 
 # ==========================================
-# 6. SES & MAİL (GÜZELLEŞTİRİLMİŞ HTML + DASHBOARD LINK)
+# 6. SES & MAİL
 # ==========================================
 async def generate_voice(text, output_file):
     communicate = edge_tts.Communicate(text, SES_MODELI)
@@ -293,7 +300,6 @@ def archive(report_body):
 def send_email_to_council(report_body, raw_links, audio_file, image_file):
     print(f"📧 Dağıtım Başlıyor: {len(ALICI_LISTESI)} Kişi")
     
-    # ⚠️ SENİN GERÇEK DASHBOARD LINKIN
     CANLI_DASHBOARD_LINKI = "https://siyasi-istihbarat-botu.streamlit.app" 
     
     saat = datetime.datetime.now().hour + 3 
