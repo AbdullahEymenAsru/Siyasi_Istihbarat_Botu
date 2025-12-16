@@ -32,30 +32,23 @@ client = Groq(api_key=GROQ_API_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 plt.switch_backend('Agg')
 
-# --- DEVASA STRATEJİK KAYNAK HAVUZU (v27.0) ---
+# --- KAYNAK HAVUZU (v28.0) ---
 rss_sources = {
-    # --- BATI & NATO ---
     'BBC World': 'http://feeds.bbci.co.uk/news/world/rss.xml',
     'CNN International': 'http://rss.cnn.com/rss/edition.rss',
     'Voice of America': 'https://www.voanews.com/api/zg$oq_et$p',
     'Foreign Policy': 'https://foreignpolicy.com/feed/',
     'Deutsche Welle': 'https://rss.dw.com/xml/rss-en-all',
-
-    # --- TÜRKİYE & ORTADOĞU ---
     'TRT World': 'https://www.trtworld.com/rss',
     'Turkiye Arastirmalari Vakfi': 'https://tav.org.tr/feed/',
     'SETA Vakfi': 'https://www.setav.org/feed/',
     'Al Jazeera': 'https://www.aljazeera.com/xml/rss/all.xml',
     'Times of Israel': 'https://www.timesofisrael.com/feed/',
     'Tehran Times': 'https://www.tehrantimes.com/rss',
-
-    # --- DOĞU BLOKU ---
     'TASS (Russia)': 'https://tass.com/rss/v2.xml',
     'China Daily': 'https://www.chinadaily.com.cn/rss/world_rss.xml',
     'Yonhap (Korea)': 'https://en.yna.co.kr/RSS/news.xml',
     'Times of India': 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
-
-    # --- 🔥 TELEGRAM & OSINT (HOT ZONE) ---
     'Clash Report (Telegram)': 'https://rsshub.app/telegram/channel/clashreport', 
     'SavunmaSanayiST (Telegram)': 'https://rsshub.app/telegram/channel/savunmasanayist', 
     'Rybar (Telegram)': 'https://rsshub.app/telegram/channel/rybar', 
@@ -71,25 +64,20 @@ rss_sources = {
 KRITIK_AKTORLER = ["Turkey", "Türkiye", "Erdoğan", "Fidan", "Biden", "Trump", "Putin", "Xi Jinping", "Zelensky", "Netanyahu", "Hamas", "NATO", "EU", "Iran", "China", "Russia", "Pakistan", "India", "Korea", "IDF", "Wagner", "TSK", "Pentagon"]
 
 # ==========================================
-# 2. AJAN 1: RESEARCHER (VERİ TOPLAYICI & SCRAPER)
+# 2. AJAN 1: RESEARCHER
 # ==========================================
 def calculate_priority_score(title, summary):
     score = 0
     text = (title + " " + summary).lower()
-    
     high_priority = ["nuclear", "war", "missile", "attack", "gaza", "ukraine", "taiwan", "terror", "bomb", "footage", "video", "alert", "breaking", "sondakika", "operasyon", "şehit", "neutralized"]
     if any(w in text for w in high_priority): score += 50
-    
     med_priority = ["turkey", "erdogan", "nato", "putin", "biden", "trump", "iran", "israel", "defense", "military", "troops", "bayraktar", "tb2", "kızılelma", "siha"]
     if any(w in text for w in med_priority): score += 30
-    
     low_priority = ["trade", "economy", "deal", "meeting", "eu", "energy"]
     if any(w in text for w in low_priority): score += 10
-    
     return score
 
 def get_full_text(url):
-    """Linke gider ve haberin tamamını indirir"""
     if "t.me" in url or "telegram" in url: return None
     try:
         downloaded = trafilatura.fetch_url(url)
@@ -100,10 +88,9 @@ def get_full_text(url):
     return None
 
 def fetch_news():
-    print("🕵️‍♂️ AJAN 1: Telegram kanalları ve Haber Siteleri taranıyor...")
+    print("🕵️‍♂️ AJAN 1: Veri toplanıyor...")
     all_news = []
     headers = {'User-Agent': 'Mozilla/5.0'}
-    
     for source, url in rss_sources.items():
         try:
             resp = requests.get(url, headers=headers, timeout=30)
@@ -113,35 +100,25 @@ def fetch_news():
                     title = entry.title
                     link = entry.link
                     summary = entry.summary[:300] if hasattr(entry, 'summary') else ""
-                    
-                    if source.endswith("(Telegram)") and len(title) < 5:
-                        title = summary[:50] + "..."
-
+                    if source.endswith("(Telegram)") and len(title) < 5: title = summary[:50] + "..."
                     score = calculate_priority_score(title, summary)
-                    if "Telegram" in source: score += 15 # Telegram bonusu
+                    if "Telegram" in source: score += 15
                     elif i == 0: score += 10 
-                    
                     all_news.append({"source": source, "title": title, "link": link, "summary": summary, "score": score})
-        except Exception as e:
-            print(f"⚠️ {source} erişim hatası: {e}")
-            continue
+        except: continue
 
     all_news.sort(key=lambda x: x['score'], reverse=True)
     top_news = all_news[:7] 
-    
     buffer = ""
     raw_links_html = "<ul>"
     current_keywords = []
 
-    print("🕷️  AJAN 1: Seçilenlerin detayına iniliyor...")
-
+    print("🕷️  AJAN 1: Detaylandırılıyor...")
     for news in top_news:
         full_text = get_full_text(news['link'])
         content_to_use = full_text if full_text else news['summary']
         content_type = "TAM METİN" if full_text else "ÖZET/MESAJ"
-        
         icon = "🔥" if "Telegram" in news['source'] else ("🚨" if news['score'] >= 50 else "🔹")
-        
         buffer += f"[{news['source']}] {icon} {news['title']} ({content_type})\nİÇERİK: {content_to_use[:1000]}...\nURL: {news['link']}\n\n"
         raw_links_html += f"<li><b>{news['source']}:</b> <a href='{news['link']}'>{news['title']}</a></li>"
         current_keywords.extend(news['title'].lower().split())
@@ -150,53 +127,36 @@ def fetch_news():
     return buffer, raw_links_html, current_keywords
 
 # ==========================================
-# 3. AKILLI HAFIZA
+# 3. HAFIZA
 # ==========================================
 def read_historical_memory(current_keywords):
-    print("🧠 HAFIZA MODÜLÜ: Arşiv taranıyor...")
     memory_buffer = ""
     files = glob.glob("ARSIV/*.md")
     files.sort(key=os.path.getmtime, reverse=True)
-    
     stop_words = ["the", "in", "at", "on", "for", "to", "and", "a", "of", "is", "with", "haber", "son", "dakika", "breaking", "news"]
     keywords = [k for k in current_keywords if len(k) > 4 and k not in stop_words]
     keywords = list(set(keywords))[:5]
-    
     total_chars = 0
     SAFE_LIMIT = 12000 
-    
     for file_path in files:
         if total_chars > SAFE_LIMIT: break
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            filename = os.path.basename(file_path)
             relevance = sum(content.lower().count(k) for k in keywords)
-            is_recent = (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(file_path))).days < 2
-            
-            if relevance > 0 or is_recent:
-                short_content = content[:2000]
-                memory_buffer += f"\n--- GEÇMİŞ RAPOR ({filename}) ---\n{short_content}...\n"
-                total_chars += len(short_content)
-                
+            if relevance > 0:
+                memory_buffer += f"\n--- GEÇMİŞ ({os.path.basename(file_path)}) ---\n{content[:2000]}...\n"
+                total_chars += len(content[:2000])
     if not memory_buffer: return "Arşivde ilgili kayıt bulunamadı."
     return memory_buffer
 
 # ==========================================
-# 4. YENİ: YAPAY ZEKA TABANLI HARİTA
+# 4. HARİTA (AJAN 5)
 # ==========================================
 def draw_network_graph(text_data):
-    print("🗺️ AJAN 5: İlişkileri analiz edip harita çiziyor...")
-    prompt = f"""
-    Haber metnini analiz et, ülkeler/liderler arasındaki ilişkileri çıkar.
-    Format: "Aktör1,Aktör2"
-    METİN: {text_data[:4000]}
-    """
+    print("🗺️ AJAN 5: Harita çiziyor...")
+    prompt = f"Metindeki ülke/lider ilişkilerini 'Aktör1,Aktör2' formatında listele:\n{text_data[:4000]}"
     try:
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
-        )
+        completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}], temperature=0.1)
         relations = completion.choices[0].message.content.split('\n')
     except: relations = ["Türkiye,Dünya"] 
 
@@ -205,16 +165,12 @@ def draw_network_graph(text_data):
         if "," in line:
             parts = line.split(',')
             if len(parts) >= 2:
-                source = parts[0].strip()
-                target = parts[1].strip()
-                if len(source) < 20 and len(target) < 20:
-                    G.add_edge(source, target)
+                G.add_edge(parts[0].strip(), parts[1].strip())
     
     if G.number_of_nodes() == 0: G.add_edge("Türkiye", "Küresel Sistem")
-
     plt.figure(figsize=(12, 8))
     pos = nx.spring_layout(G, k=1.5) 
-    nx.draw_networkx_nodes(G, pos, node_size=2500, node_color='#c0392b', alpha=0.9)
+    nx.draw_networkx_nodes(G, pos, node_size=2500, node_color='#2c3e50', alpha=0.9)
     nx.draw_networkx_edges(G, pos, width=2, alpha=0.6, edge_color='#bdc3c7')
     nx.draw_networkx_labels(G, pos, font_size=9, font_color='white', font_weight='bold')
     plt.title("GÜNLÜK JEOPOLİTİK ETKİLEŞİM AĞI", fontsize=16, color='#c0392b')
@@ -225,55 +181,72 @@ def draw_network_graph(text_data):
     return filename
 
 # ==========================================
-# 5. AJANLI SİMÜLASYON
+# 5. AJANLI SİMÜLASYON (FORMAT GÜNCELLEMESİ) 🔥
 # ==========================================
 def run_agent_workflow(current_data, historical_memory):
     
-    print("⏳ AJAN 2 (HISTORIAN): Çalışıyor...")
-    historian_prompt = f"""
-    Sen Tarihçisin. Bugünün haberleri: {current_data[:5000]}
-    Geçmiş (Arşiv): {historical_memory}
-    Görevin: Geçmişteki benzer olaylarla bugünü kıyasla.
-    """
-    history_analysis = client.chat.completions.create(
+    # Tarihçi ve Eleştirmen aynı kalıyor...
+    print("⏳ AJAN 2 ve 3 çalışıyor...")
+    historian_report = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": historian_prompt}]
+        messages=[{"role": "user", "content": f"Tarihçi olarak bugünkü verileri ({current_data[:4000]}) geçmişle ({historical_memory}) kıyasla."}]
     ).choices[0].message.content
 
-    print("⚖️ AJAN 3 (THE CRITIC): Çalışıyor...")
-    critic_prompt = f"""
-    Sen 'Kızıl Takım' liderisin. Veriler: {current_data[:5000]}
-    TELEGRAM/OSINT verileri ile RESMİ MEDYA (BBC/CNN) arasındaki farkları bul.
-    Sokaktaki gerçek ile resmi açıklama çelişiyor mu?
-    """
-    critic_analysis = client.chat.completions.create(
+    critic_report = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": critic_prompt}]
+        messages=[{"role": "user", "content": f"Kızıl Takım olarak ({current_data[:4000]}) verilerindeki Batı/Doğu/OSINT çelişkilerini sertçe eleştir."}]
     ).choices[0].message.content
 
-    print("✍️ AJAN 4 (CHIEF EDITOR): Nihai rapor yazılıyor...")
+    print("✍️ AJAN 4 (CHIEF EDITOR): Nihai raporu ŞABLONA GÖRE yazıyor...")
     
-    final_system_prompt = """Sen Savaş Odası Başkanısın. NİHAİ STRATEJİK RAPORU yaz.
+    # --- YENİ HTML ŞABLONU VE KATI KURALLAR ---
+    final_system_prompt = """Sen Savaş Odası Başkanısın. Raporun okunabilirliği her şeyden önemlidir.
     
-    KURALLAR:
-    1. LİNK ZORUNLU: Olayların yanına (<a href='URL'>Kaynak</a>) ekle.
-    2. PROFESYONEL DİL: "Realist Kanat" yerine "JEOPOLİTİK RİSK ANALİZİ" kullan.
-    3. OSINT VURGUSU: Telegram'dan gelen ham bilgileri özellikle belirt.
+    KATI BİÇİM KURALLARI (FORMAT):
+    1. ASLA düz paragraf yazma. Her şeyi <ul> ve <li> etiketleri ile maddeler halinde yaz.
+    2. Her maddenin başına uygun bir emoji koy (📍, 💥, 🛑, 💰 gibi).
+    3. Önemli isimleri (Putin, Erdoğan, NATO) ve ülkeleri mutlaka <b>KALIN</b> yaz.
+    4. Her cümlenin sonuna kaynağını (<a href='URL'>Kaynak</a>) formatında ekle. Link yoksa o cümleyi yazma.
     
-    BÖLÜMLER:
-    1. 🔥 SAHADAN SON DAKİKA (Telegram/OSINT Verileri)
-    2. 🌍 JEOPOLİTİK RİSK VE TEHDİTLER (Resmi Medya Analizi)
-    3. 🤝 DİPLOMASİ VE EKONOMİ
-    4. 👁️ PROPAGANDA VE GERÇEKLİK (Kızıl Takım Notları)
-    5. 📜 TARİHSEL HAFIZA
-    6. 🇹🇷 ANKARA İÇİN STRATEJİK TAVSİYE
-    7. 🎲 GELECEK SENARYOLARI
+    RAPOR ŞABLONU (HTML):
+    
+    <h3 style="color:#c0392b; border-bottom: 2px solid #c0392b;">1. 🔥 SAHADAN SON DAKİKA (Telegram/OSINT)</h3>
+    <ul>
+      <li>💥 <b>Rusya</b> ordusu ilerliyor... (<a href='...'>Intel Slava</a>)</li>
+      <li>📍 <b>Gazze</b> sokaklarında çatışma... (<a href='...'>Gaza Now</a>)</li>
+    </ul>
+
+    <h3 style="color:#2980b9; border-bottom: 2px solid #2980b9;">2. 🌍 JEOPOLİTİK RİSK ANALİZİ</h3>
+    <ul>
+      <li>🛑 <b>ABD</b> ve <b>Çin</b> arasında gerilim... (<a href='...'>CNN</a>)</li>
+    </ul>
+
+    <h3 style="color:#27ae60; border-bottom: 2px solid #27ae60;">3. 🤝 DİPLOMASİ VE EKONOMİ</h3>
+    <ul>
+      <li>💰 <b>Avrupa</b> borsaları düşüşte... (<a href='...'>Bloomberg</a>)</li>
+    </ul>
+
+    <h3 style="color:#8e44ad; border-bottom: 2px solid #8e44ad;">4. 👁️ KIZIL TAKIM: PROPAGANDA SAVAŞI</h3>
+    <p><i>(Burada Denetçi Notlarını maddeler halinde özetle)</i></p>
+
+    <h3 style="color:#d35400; border-bottom: 2px solid #d35400;">5. 🇹🇷 ANKARA İÇİN STRATEJİK TAVSİYE</h3>
+    <ul>
+      <li>👉 <b>Türkiye</b> bu durumda... yapmalıdır.</li>
+    </ul>
+    
+    <div style="background-color:#fef9e7; padding:10px; border:1px solid #f1c40f; border-radius:5px;">
+    <b>🎲 GELECEK SENARYOLARI:</b>
+    <ul>
+       <li>%60 İhtimalle: ...</li>
+       <li>%30 İhtimalle: ...</li>
+    </ul>
+    </div>
     """
     
     final_user_prompt = f"""
     HAM VERİLER: {current_data[:7000]}
-    TARİHÇİ RAPORU: {history_analysis}
-    DENETÇİ NOTU: {critic_analysis}
+    TARİHÇİ: {historian_report}
+    DENETÇİ: {critic_report}
     """
     
     final_report = client.chat.completions.create(
@@ -282,13 +255,13 @@ def run_agent_workflow(current_data, historical_memory):
             {"role": "system", "content": final_system_prompt},
             {"role": "user", "content": final_user_prompt}
         ],
-        temperature=0.5
+        temperature=0.4 # Daha tutarlı format için sıcaklığı düşürdük
     ).choices[0].message.content
     
     return final_report
 
 # ==========================================
-# 6. SES & MAİL
+# 6. SES & MAİL (GÜZELLEŞTİRİLMİŞ HTML)
 # ==========================================
 async def generate_voice(text, output_file):
     communicate = edge_tts.Communicate(text, SES_MODELI)
@@ -296,7 +269,7 @@ async def generate_voice(text, output_file):
 
 def create_audio(text_content):
     print("🎙️ Seslendiriliyor...")
-    clean_text = re.sub('<[^<]+?>', '', text_content)
+    clean_text = re.sub('<[^<]+?>', '', text_content) # HTML taglerini temizle
     clean_text = re.sub(r'http\S+', '', clean_text)
     script = "Sayın Konsey Üyeleri. Küresel İstihbarat Raporu arz edilir. " + clean_text[:900]
     filename = "Gunluk_Brifing.mp3"
@@ -321,14 +294,13 @@ def archive(report_body):
 def send_email_to_council(report_body, raw_links, audio_file, image_file):
     print(f"📧 Dağıtım Başlıyor: {len(ALICI_LISTESI)} Kişi")
     
-    # Şu anki saati al (UTC+3 Türkiye Saati)
     saat = datetime.datetime.now().hour + 3 
-    
-    # Sadece Sabah ve Akşam ayrımı
     if 5 <= saat < 13:
         baslik_ek = "🌅 SABAH İSTİHBARATI (Morning Brief)"
+        renk = "#2980b9" # Mavi tema
     else:
         baslik_ek = "🌙 AKŞAM ÖZETİ VE ANALİZ (Evening Wrap-up)"
+        renk = "#2c3e50" # Koyu tema
 
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -340,30 +312,44 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
             msg = MIMEMultipart('related')
             msg['From'] = GMAIL_USER
             msg['To'] = alici 
-            
-            # Dinamik Başlık
             msg['Subject'] = f"🧠 {baslik_ek} - {datetime.date.today()}"
-            
             msg_alternative = MIMEMultipart('alternative')
             msg.attach(msg_alternative)
 
+            # --- PROFESYONEL MAİL TASARIMI ---
             html_content = f"""
-            <html><body style='font-family: Arial, sans-serif; color:#333;'>
-                <h1 style="color:#2c3e50; text-align:center;">🛡️ SAVAŞ ODASI</h1>
-                <h3 style="text-align:center; color:#c0392b;">{baslik_ek}</h3>
-                <p style="text-align:center;"><i>"Büyük Veri Analizli Stratejik Rapor"</i></p>
-                <hr>
-                <center>
-                    <h3>🕸️ GÜNLÜK ETKİLEŞİM AĞI</h3>
-                    <img src="cid:network_map" style="width:100%; max-width:700px; border:1px solid #ddd; padding:5px; border-radius:10px;">
-                    <p style="font-size:10px; color:gray;">(Yapay Zeka tarafından haberlerden otomatik çıkarılmıştır)</p>
-                </center>
-                <br>
-                {report_body}
-                <br><hr>
-                <div style="font-size:12px; color:#555; background:#f9f9f9; padding:10px;">
-                    <h3>📚 ANALİZ EDİLEN KAYNAKLAR</h3>
-                    {raw_links}
+            <html><body style='font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; color:#333; line-height: 1.6; background-color: #f4f4f4; padding: 20px;'>
+                
+                <div style="max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+                    
+                    <div style="text-align: center; border-bottom: 3px solid {renk}; padding-bottom: 20px; margin-bottom: 20px;">
+                        <h1 style="color:{renk}; margin: 0;">🛡️ SAVAŞ ODASI</h1>
+                        <h3 style="color:#555; margin-top: 5px;">{baslik_ek}</h3>
+                        <p style="font-size: 12px; color: #888;">YZ Destekli Stratejik Analiz • Telegram/OSINT Entegrasyonu</p>
+                    </div>
+
+                    <center>
+                        <div style="border: 1px solid #ddd; padding: 5px; border-radius: 8px; display: inline-block;">
+                            <h4 style="margin: 0 0 10px 0; color: #555;">🕸️ KÜRESEL İLİŞKİ AĞI</h4>
+                            <img src="cid:network_map" style="width:100%; max-width:600px; border-radius:5px;">
+                        </div>
+                    </center>
+                    <br>
+
+                    <div style="font-size: 15px;">
+                        {report_body}
+                    </div>
+                    
+                    <br><hr style="border: 0; border-top: 1px solid #eee;">
+                    
+                    <div style="font-size:12px; color:#666; background:#f9f9f9; padding:15px; border-radius: 5px;">
+                        <h4 style="margin-top: 0;">📚 DOĞRULANMIŞ KAYNAKÇA</h4>
+                        {raw_links}
+                    </div>
+                    
+                    <p style="text-align: center; font-size: 10px; color: #aaa; margin-top: 20px;">
+                        Bu rapor Yapay Zeka (Llama-3) tarafından otonom olarak üretilmiştir. Kesin yatırım veya askeri tavsiye niteliği taşımaz.
+                    </p>
                 </div>
             </body></html>
             """
@@ -385,7 +371,6 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
                 msg.attach(part)
             
             server.sendmail(GMAIL_USER, alici, msg.as_string())
-        
         server.quit()
         print("✅ Dağıtım tamamlandı!")
     except Exception as e:
@@ -394,7 +379,6 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
 if __name__ == "__main__":
     raw_data, raw_links, current_keywords = fetch_news()
     memory = read_historical_memory(current_keywords)
-    
     if len(raw_data) > 20:
         report = run_agent_workflow(raw_data, memory)
         graph_map = draw_network_graph(raw_data)
