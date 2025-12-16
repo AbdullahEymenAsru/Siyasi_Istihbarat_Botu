@@ -2,7 +2,7 @@ name: Gunluk Istihbarat Botu
 
 on:
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 5,15 * * *'
   workflow_dispatch:
 
 # --- YENİ EKLENEN KISIM: YAZMA İZNİ ---
