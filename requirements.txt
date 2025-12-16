@@ -13,3 +13,4 @@ duckduckgo-search
 folium
 streamlit-folium
 supabase
+cryptography
