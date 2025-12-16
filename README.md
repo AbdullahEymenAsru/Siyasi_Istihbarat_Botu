@@ -148,9 +148,13 @@ NOT: !!!Sistemi başlatmadan önce .streamlit/secrets.toml dosyasını oluşturd
 Örnek gösterim:
 
 GROQ_API_KEY = "kendi_anahtarı"
+
 SUPABASE_URL = "kendi_urlsi"
+
 SUPABASE_KEY = "kendi_keyi"
+
 GMAIL_USER = "gönderim_yapılacak_mail"
+
 GMAIL_PASSWORD = "gmail_api"
 
 ---
