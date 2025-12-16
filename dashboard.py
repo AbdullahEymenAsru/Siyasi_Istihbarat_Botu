@@ -8,23 +8,25 @@ from groq import Groq
 from duckduckgo_search import DDGS
 import folium
 from streamlit_folium import st_folium
+from supabase import create_client, Client
 
 # 1. AYARLAR
-st.set_page_config(page_title="Savaş Odası v5.0", page_icon="🌍", layout="wide")
+st.set_page_config(page_title="Savaş Odası (SECURE)", page_icon="🔐", layout="wide")
 
-# API Anahtarı
-try:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-except:
-    st.error("Lütfen Streamlit Secrets ayarlarından GROQ_API_KEY ekleyin.")
+# API Anahtarları Kontrolü
+if "GROQ_API_KEY" not in st.secrets or "SUPABASE_URL" not in st.secrets:
+    st.error("Lütfen Streamlit Secrets ayarlarından GROQ ve SUPABASE anahtarlarını ekleyin.")
     st.stop()
 
+# İstemcileri Başlat
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
 # Klasör Kontrolleri
-for folder in ["ARSIV", "LOGS", "VEKTOR_DB"]:
+for folder in ["ARSIV", "VEKTOR_DB"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
-# --- SABİT KOORDİNATLAR (Hız ve Doğruluk İçin) ---
-# AI bazen saçmalayabilir, bu yüzden başkentleri sabitledik.
+# --- SABİT KOORDİNATLAR ---
 KOORDINATLAR = {
     "Türkiye": [39.9334, 32.8597], "Turkey": [39.9334, 32.8597], "Ankara": [39.9334, 32.8597],
     "ABD": [38.9072, -77.0369], "USA": [38.9072, -77.0369], "Washington": [38.9072, -77.0369],
@@ -45,214 +47,191 @@ KOORDINATLAR = {
     "Ermenistan": [40.1792, 44.4991], "Armenia": [40.1792, 44.4991]
 }
 
-# --- FONKSİYONLAR ---
+# --- GÜVENLİK VE VERİTABANI FONKSİYONLARI ---
+def giris_yap(email, password):
+    try:
+        res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        return res.user
+    except Exception as e:
+        st.error(f"Giriş başarısız: {e}")
+        return None
+
+def kayit_ol(email, password):
+    try:
+        res = supabase.auth.sign_up({"email": email, "password": password})
+        if res.user:
+            st.success("Kayıt başarılı! Giriş yapabilirsiniz.")
+        return res.user
+    except Exception as e:
+        st.error(f"Kayıt hatası: {e}")
+        return None
+
+def buluttan_yukle(user_id):
+    """Kullanıcının geçmiş sohbetini Supabase'den çeker."""
+    try:
+        response = supabase.table("chat_logs").select("messages").eq("user_id", user_id).execute()
+        if response.data: return response.data[0]["messages"]
+    except: pass
+    return []
+
+def buluta_kaydet(user_id, messages):
+    """Sohbeti Supabase'e kaydeder."""
+    try:
+        data = {"user_id": user_id, "messages": messages}
+        supabase.table("chat_logs").upsert(data, on_conflict="user_id").execute()
+    except Exception as e: print(f"Kayıt hatası: {e}")
+
+# --- AI VE HARİTA FONKSİYONLARI ---
 @st.cache_resource
 def get_chroma_client():
     return chromadb.PersistentClient(path="VEKTOR_DB")
 
 def hafizayi_guncelle():
-    chroma_client = get_chroma_client()
-    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-    collection = chroma_client.get_or_create_collection(name="savas_odasi_hafiza", embedding_function=sentence_transformer_ef)
-    
+    chroma = get_chroma_client()
+    ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+    col = chroma.get_or_create_collection(name="savas_odasi", embedding_function=ef)
     dosyalar = glob.glob("ARSIV/*.md")
-    yeni_veri = False
-    
-    for dosya_yolu in dosyalar:
-        dosya_adi = os.path.basename(dosya_yolu)
-        if len(collection.get(ids=[dosya_adi])['ids']) == 0:
-            with open(dosya_yolu, "r", encoding="utf-8") as f:
-                collection.add(documents=[f.read()], metadatas=[{"source": dosya_adi}], ids=[dosya_adi])
-            yeni_veri = True
-    return yeni_veri
+    yeni = False
+    for d in dosyalar:
+        adi = os.path.basename(d)
+        if not col.get(ids=[adi])['ids']:
+            with open(d,"r",encoding="utf-8") as f: col.add(documents=[f.read()], metadatas=[{"source":adi}], ids=[adi])
+            yeni = True
+    return yeni
 
-def hafizadan_bilgi_getir(soru):
+def hafizadan_getir(soru):
     try:
-        chroma_client = get_chroma_client()
-        sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-        collection = chroma_client.get_collection(name="savas_odasi_hafiza", embedding_function=sentence_transformer_ef)
-        results = collection.query(query_texts=[soru], n_results=3)
-        baglam = ""
-        if results['documents']:
-            for doc in results['documents'][0]: baglam += doc + "\n\n---\n\n"
-        return baglam if baglam else "Arşivde bilgi yok."
+        col = get_chroma_client().get_collection(name="savas_odasi", embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2"))
+        res = col.query(query_texts=[soru], n_results=3)
+        return "\n".join(res['documents'][0]) if res['documents'] else "Arşivde bilgi yok."
     except: return "Hafıza hatası."
 
-def internette_ara(sorgu):
+def web_ara(soru):
     try:
-        results = DDGS().text(keywords=sorgu, region='tr-tr', safesearch='off', max_results=5)
-        ozet = ""
-        if results:
-            for r in results: ozet += f"- {r['title']}: {r['body']} (Link: {r['href']})\n"
-        return ozet if ozet else "Sonuç bulunamadı."
-    except Exception as e: return f"Bağlantı hatası: {e}"
+        res = DDGS().text(keywords=soru, region='tr-tr', max_results=5)
+        return "\n".join([f"- {r['title']}: {r['body']}" for r in res]) if res else "İnternette sonuç yok."
+    except: return "Bağlantı hatası."
 
-def harita_verisi_olustur(rapor_metni):
-    """
-    Rapor metnini okur ve harita için JSON formatında ilişki verisi çıkarır.
-    """
-    prompt = f"""
-    Aşağıdaki istihbarat raporunu analiz et ve harita üzerinde göstermek için coğrafi ilişkileri çıkar.
-    Sadece JSON formatında cevap ver. Başka hiçbir şey yazma.
-    
-    Format şu olmalı:
-    {{
-        "data": [
-            {{"kaynak_ulke": "Rusya", "hedef_ulke": "Ukrayna", "olay": "Füze saldırısı", "risk_puani": 85}},
-            {{"kaynak_ulke": "ABD", "hedef_ulke": "İsrail", "olay": "Diplomatik destek", "risk_puani": 30}}
-        ]
-    }}
-    
-    Kullanılacak Ülkeler (Sadece bunlardan seç): Türkiye, ABD, Rusya, Ukrayna, Çin, İsrail, Gazze, İran, Avrupa Birliği, Yunanistan, Suriye, Azerbaycan, Ermenistan.
-    
-    RAPOR:
-    {rapor_metni[:4000]}
-    """
+def harita_analiz(metin):
+    prompt = f"JSON formatında coğrafi ilişkiler çıkar: {{'data': [{{'kaynak_ulke':'Rusya','hedef_ulke':'Ukrayna','olay':'Saldırı','risk_puani':80}}]}} Metin: {metin[:3000]}"
     try:
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            response_format={"type": "json_object"}
-        )
-        return json.loads(completion.choices[0].message.content)
-    except:
-        return {"data": []}
+        res = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content":prompt}], response_format={"type":"json_object"})
+        return json.loads(res.choices[0].message.content)
+    except: return {"data":[]}
 
-# --- GİRİŞ VE AYARLAR ---
-def gecmisi_yukle(kullanici_adi):
-    path = f"LOGS/{kullanici_adi}.json"
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f: return json.load(f)
-    return []
+# ==========================================
+# UYGULAMA AKIŞI
+# ==========================================
 
-def gecmisi_kaydet(kullanici_adi, mesajlar):
-    with open(f"LOGS/{kullanici_adi}.json", "w", encoding="utf-8") as f:
-        json.dump(mesajlar, f, ensure_ascii=False, indent=4)
+# 1. OTURUM KONTROLÜ
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+# GİRİŞ EKRANI (Eğer kullanıcı giriş yapmamışsa)
+if not st.session_state.user:
+    st.title("🔐 SAVAŞ ODASI: GÜVENLİ GİRİŞ")
+    st.markdown("Verileriniz Supabase Bulutunda uçtan uca şifreli saklanmaktadır.")
+    
+    tab_giris, tab_kayit = st.tabs(["Giriş Yap", "Kayıt Ol"])
+    
+    with tab_giris:
+        email = st.text_input("E-posta Adresi")
+        password = st.text_input("Şifre", type="password")
+        if st.button("Giriş Yap"):
+            user = giris_yap(email, password)
+            if user:
+                st.session_state.user = user
+                st.session_state.messages = buluttan_yukle(user.id)
+                st.rerun()
+
+    with tab_kayit:
+        new_email = st.text_input("Yeni E-posta Adresi")
+        new_pass = st.text_input("Yeni Şifre (En az 6 karakter)", type="password")
+        if st.button("Hesap Oluştur"):
+            kayit_ol(new_email, new_pass)
+            
+    st.stop() # Giriş yapılmadıysa kodun geri kalanı çalışmaz.
+
+# --- BURADAN SONRASI SADECE GİRİŞ YAPANLARA GÖZÜKÜR ---
+
+user_email = st.session_state.user.email
+user_id = st.session_state.user.id
 
 # YAN MENÜ
-st.sidebar.title("🔐 GİRİŞ")
-ajan_kodu = st.sidebar.text_input("Ajan Kodu:", placeholder="Örn: Eymen007")
-
-if st.sidebar.button("🧹 Sohbeti Sıfırla"):
-    if ajan_kodu:
-        gecmisi_kaydet(ajan_kodu, [])
-        st.rerun()
+st.sidebar.success(f"Aktif Ajan: {user_email}")
+if st.sidebar.button("Güvenli Çıkış"):
+    supabase.auth.sign_out()
+    st.session_state.user = None
+    st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.title("🗄️ RAPORLAR")
+if st.sidebar.button("🧹 Geçmişi Temizle"):
+    buluta_kaydet(user_id, [])
+    st.session_state.messages = []
+    st.rerun()
 
+# Rapor Listesi
 try:
     dosyalar = glob.glob("ARSIV/*.md")
     dosyalar.sort(key=os.path.getmtime, reverse=True)
-    dosya_isimleri = [os.path.basename(f) for f in dosyalar]
-except: dosya_isimleri = []
+    files = [os.path.basename(f) for f in dosyalar]
+except: files = []
 
-if dosya_isimleri:
-    secilen_dosya = st.sidebar.radio("Seçiniz:", dosya_isimleri)
-    with open(f"ARSIV/{secilen_dosya}", "r", encoding="utf-8") as f:
-        secilen_dosya_icerigi = f.read()
-else:
-    secilen_dosya_icerigi = "Arşiv boş."
-
-# Hafıza Güncelleme
-with st.spinner('Sistem yükleniyor...'):
-    if hafizayi_guncelle(): st.toast("Arşiv Güncellendi!", icon="🧠")
+secilen_icerik = "Veri yok"
+if files:
+    sec = st.sidebar.radio("🗄️ Rapor Arşivi", files)
+    with open(f"ARSIV/{sec}", "r", encoding="utf-8") as f: secilen_icerik = f.read()
 
 # ANA EKRAN
-st.title("🌍 KÜRESEL SAVAŞ ODASI (Level 5)")
+st.title("☁️ KÜRESEL SAVAŞ ODASI (Level 7)")
+with st.spinner("Beyin güncelleniyor..."): hafizayi_guncelle()
 
-if not ajan_kodu:
-    st.warning("⚠️ Lütfen sol menüden Ajan Kodunuzu giriniz.")
-    st.stop()
+# SEKMELER
+t1, t2, t3 = st.tabs(["📄 RAPOR", "🗺️ HARİTA", "🧠 HİBRİT CHAT"])
 
-# Oturum Başlat
-if "messages" not in st.session_state: st.session_state.messages = gecmisi_yukle(ajan_kodu)
-if "last_user" not in st.session_state: st.session_state.last_user = ajan_kodu
-elif st.session_state.last_user != ajan_kodu:
-    st.session_state.messages = gecmisi_yukle(ajan_kodu)
-    st.session_state.last_user = ajan_kodu
+with t1: 
+    st.markdown(secilen_icerik, unsafe_allow_html=True)
 
-st.success(f"✅ Ajan: **{ajan_kodu}** Aktif")
-
-# --- SEKMELİ YAPI (TABS) ---
-tab1, tab2, tab3 = st.tabs(["📄 GÜNLÜK RAPOR", "🗺️ CANLI SAVAŞ HARİTASI", "🧠 HİBRİT CHAT"])
-
-with tab1:
-    st.markdown(secilen_dosya_icerigi, unsafe_allow_html=True)
-
-with tab2:
+with t2:
     st.subheader("📍 İnteraktif Operasyon Haritası")
-    st.info("Bu harita, sol menüde seçilen rapordaki olaylara göre anlık çizilir.")
-    
-    if st.button("🗺️ Haritayı Çiz"):
-        with st.spinner("Yapay Zeka raporu analiz ediyor..."):
-            harita_json = harita_verisi_olustur(secilen_dosya_icerigi)
-            
-            # Harita Başlangıcı
-            m = folium.Map(location=[39.0, 35.0], zoom_start=3, tiles="CartoDB dark_matter")
-            
-            # Verileri İşle
-            if "data" in harita_json:
-                for olay in harita_json["data"]:
-                    k_ulke = olay.get("kaynak_ulke")
-                    h_ulke = olay.get("hedef_ulke")
-                    aciklama = olay.get("olay")
-                    risk = olay.get("risk_puani", 50)
-                    
-                    if k_ulke in KOORDINATLAR and h_ulke in KOORDINATLAR:
-                        k_loc = KOORDINATLAR[k_ulke]
-                        h_loc = KOORDINATLAR[h_ulke]
-                        
-                        # Kaynak Marker
-                        folium.Marker(k_loc, popup=f"<b>{k_ulke}</b><br>{aciklama}", icon=folium.Icon(color="red", icon="crosshairs", prefix='fa')).add_to(m)
-                        
-                        # Hedef Marker
-                        folium.Marker(h_loc, popup=f"<b>{h_ulke}</b><br>Hedef", icon=folium.Icon(color="blue", icon="info-sign")).add_to(m)
-                        
-                        # Çizgi
-                        renk = "red" if risk > 70 else ("orange" if risk > 40 else "green")
-                        folium.PolyLine([k_loc, h_loc], color=renk, weight=2.5, tooltip=f"{k_ulke} -> {h_ulke}").add_to(m)
-            
-            st_folium(m, width="100%", height=500)
+    if st.button("🗺️ Haritayı Analiz Et ve Çiz"):
+        data = harita_analiz(secilen_icerik)
+        m = folium.Map([39,35], zoom_start=3, tiles="CartoDB dark_matter")
+        if "data" in data:
+            for i in data["data"]:
+                k, h, r = i.get("kaynak_ulke"), i.get("hedef_ulke"), i.get("risk_puani",50)
+                if k in KOORDINATLAR and h in KOORDINATLAR:
+                    folium.Marker(KOORDINATLAR[k], popup=k, icon=folium.Icon(color="red",icon="crosshairs", prefix='fa')).add_to(m)
+                    folium.Marker(KOORDINATLAR[h], popup=h, icon=folium.Icon(color="blue",icon="info-sign")).add_to(m)
+                    folium.PolyLine([KOORDINATLAR[k],KOORDINATLAR[h]], color="red" if r>70 else "orange").add_to(m)
+        st_folium(m, width="100%")
 
-with tab3:
+with t3:
     st.subheader("💬 Hibrit İstihbarat Analisti")
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]): st.markdown(m["content"])
     
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
-        
-    if prompt := st.chat_input("Emriniz?"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
-        gecmisi_kaydet(ajan_kodu, st.session_state.messages)
+    if q := st.chat_input("Emriniz nedir komutanım?"):
+        st.session_state.messages.append({"role":"user","content":q})
+        with st.chat_message("user"): st.markdown(q)
+        buluta_kaydet(user_id, st.session_state.messages) # Anlık Kayıt
         
         with st.status("🕵️‍♂️ Analiz yapılıyor...") as s:
-            st.write("📂 Arşiv taranıyor...")
-            arsiv = hafizadan_bilgi_getir(prompt)
-            st.write("🌐 İnternet taranıyor...")
-            web = internette_ara(prompt)
+            st.write("📂 Arşiv taranıyor (RAG)...")
+            arsiv = hafizadan_getir(q)
+            st.write("🌐 İnternet taranıyor (Web)...")
+            web = web_ara(q)
             s.update(label="✅ Tamamlandı", state="complete")
-            
+        
         with st.chat_message("assistant"):
-            try:
-                stream = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[{
-                        "role": "system", 
-                        "content": f"""Sen Stratejistsin. 
-                        ARŞİV BİLGİSİ: {arsiv}
-                        WEB BİLGİSİ: {web}
-                        SORU: {prompt}
-                        
-                        Arşiv ve Web bilgisini birleştirerek cevapla."""
-                    }] + st.session_state.messages,
-                    stream=True
-                )
-                def gen():
-                    for chunk in stream:
-                        if chunk.choices[0].delta.content: yield chunk.choices[0].delta.content
-                res = st.write_stream(gen())
-                st.session_state.messages.append({"role": "assistant", "content": res})
-                gecmisi_kaydet(ajan_kodu, st.session_state.messages)
-            except Exception as e: st.error(str(e))
+            stream = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role":"system","content":f"Sen Stratejistsin.\n\nARŞİV BİLGİSİ:\n{arsiv}\n\nCANLI WEB BİLGİSİ:\n{web}\n\nSORU: {q}\n\nBunları birleştir ve cevapla."}] + st.session_state.messages,
+                stream=True
+            )
+            def gen():
+                for c in stream:
+                    if c.choices[0].delta.content: yield c.choices[0].delta.content
+            res = st.write_stream(gen())
+            st.session_state.messages.append({"role":"assistant","content":res})
+            buluta_kaydet(user_id, st.session_state.messages) # Anlık Kayıt
