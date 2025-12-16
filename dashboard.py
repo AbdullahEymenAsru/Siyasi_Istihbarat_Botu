@@ -102,6 +102,18 @@ def kayit_ol(email, password):
         st.error(f"Kayıt hatası: {e}")
         return None
 
+def sifre_sifirla(email):
+    """Şifre sıfırlama maili gönderir."""
+    try:
+        # Redirect URL, Streamlit uygulamasının adresi olmalı (yoksa localhost'a dönebilir)
+        # Eğer canlıda ise buraya uygulamanızın linkini koyun.
+        site_url = "https://siyasi-istihbarat-botu.streamlit.app"
+        supabase.auth.reset_password_email(email, options={"redirect_to": site_url})
+        st.success(f"📧 Sıfırlama bağlantısı {email} adresine gönderildi.")
+        st.warning("⚠️ DİKKAT: Şifrenizi değiştirdiğinizde, eski şifrenizle kilitlenmiş olan sohbet geçmişiniz OKUNAMAZ hale gelecektir (Silinecektir).")
+    except Exception as e:
+        st.error(f"Mail gönderme hatası: {e}")
+
 def buluttan_yukle(user_id, password):
     """Supabase'den şifreli veriyi çeker ve kullanıcının şifresiyle çözer."""
     try:
@@ -187,7 +199,17 @@ if not st.session_state.user and not st.session_state.is_guest:
                 st.session_state.messages = buluttan_yukle(user.id, password)
                 st.rerun()
                 
-        with st.expander("Yeni Hesap Oluştur"):
+        # ŞİFREMİ UNUTTUM BÖLÜMÜ (YENİ)
+        with st.expander("❓ Şifremi Unuttum"):
+            st.info("E-posta adresinizi girin, sıfırlama bağlantısı gönderelim.")
+            reset_mail = st.text_input("Kayıtlı E-posta Adresi")
+            if st.button("Sıfırlama Linki Gönder"):
+                if reset_mail:
+                    sifre_sifirla(reset_mail)
+                else:
+                    st.warning("Lütfen e-posta adresini girin.")
+
+        with st.expander("📝 Yeni Hesap Oluştur"):
             new_email = st.text_input("Yeni E-posta")
             new_pass = st.text_input("Yeni Şifre", type="password")
             if st.button("Kayıt Ol"): kayit_ol(new_email, new_pass)
@@ -252,8 +274,7 @@ t1, t2, t3 = st.tabs(["📄 RAPOR", "🗺️ HARİTA", "🧠 HİBRİT CHAT"])
 with t1: st.markdown(secilen_icerik, unsafe_allow_html=True)
 
 with t2:
-    st.subheader("📍 İnteraktif Operasyon Haritası")
-    if st.button("🗺️ Haritayı Analiz Et ve Çiz"):
+    if st.button("Haritayı Çiz"):
         data = harita_analiz(secilen_icerik)
         m = folium.Map([39,35], zoom_start=3, tiles="CartoDB dark_matter")
         if "data" in data:
@@ -266,11 +287,10 @@ with t2:
         st_folium(m, width="100%")
 
 with t3:
-    st.subheader("💬 Hibrit İstihbarat Analisti")
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.markdown(m["content"])
     
-    if q := st.chat_input("Emriniz nedir komutanım?"):
+    if q := st.chat_input("Emriniz?"):
         st.session_state.messages.append({"role":"user","content":q})
         with st.chat_message("user"): st.markdown(q)
         
@@ -279,9 +299,7 @@ with t3:
             buluta_kaydet(user_id, st.session_state.messages, user_pass)
         
         with st.status("Analiz yapılıyor...") as s:
-            st.write("📂 Arşiv taranıyor (RAG)...")
             arsiv = hafizadan_getir(q)
-            st.write("🌐 İnternet taranıyor (Web)...")
             web = web_ara(q)
             s.update(label="Tamamlandı", state="complete")
         
