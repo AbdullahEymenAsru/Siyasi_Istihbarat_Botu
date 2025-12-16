@@ -47,9 +47,6 @@ def get_email_list():
 
 ALICI_LISTESI = get_email_list()
 # ----------------------------------
-# main.py dosyasında "ALICI_LISTESI = get_email_list()" satırının hemen altına ekle:
-
-print(f"📋 KULLANILACAK MAİL LİSTESİ: {ALICI_LISTESI}")
 
 client = Groq(api_key=GROQ_API_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
@@ -103,6 +100,8 @@ def fetch_news():
     print("🕵️‍♂️ AJAN 1: Geniş çaplı veri taraması yapılıyor...")
     all_news = []
     headers = {'User-Agent': 'Mozilla/5.0'}
+    
+    # Teknik filtreleme için UTC zamanı kullanıyoruz (Doğrusu bu)
     now = datetime.datetime.now()
 
     for source, url in rss_sources.items():
@@ -114,6 +113,7 @@ def fetch_news():
                     if hasattr(entry, 'published_parsed') and entry.published_parsed:
                         try:
                             pub_date = datetime.datetime.fromtimestamp(time.mktime(entry.published_parsed))
+                            # 24 Saat kontrolü
                             if (now - pub_date).total_seconds() > 86400:
                                 continue 
                         except: pass 
@@ -129,7 +129,7 @@ def fetch_news():
     top_news = all_news[:12] 
     
     buffer = ""
-    raw_links_html = "" # Linkleri burada biriktireceğiz
+    raw_links_html = "" 
     current_keywords = []
 
     print(f"🕷️  AJAN 1: Seçilen {len(top_news)} GÜNCEL haber işleniyor...")
@@ -140,9 +140,7 @@ def fetch_news():
         
         buffer += f"--- HABER ID: {i+1} ---\nKAYNAK: {news['source']}\nURL: {news['link']}\nBAŞLIK: {news['title']}\nİÇERİK: {content_to_use[:1500]}\n\n"
         
-        # Link listesini Python tarafında oluşturuyoruz (GARANTİ OLSUN DİYE)
         raw_links_html += f"<li><a href='{news['link']}' style='color:#2980b9;'>{news['title']}</a> - {news['source']}</li>"
-        
         current_keywords.extend(news['title'].lower().split())
     
     return buffer, raw_links_html, current_keywords
@@ -193,7 +191,7 @@ def draw_network_graph(text_data):
     return filename
 
 # ==========================================
-# 5. AJANLI SİMÜLASYON (GELİŞMİŞ AKADEMİK MOD)
+# 5. AJANLI SİMÜLASYON (AKADEMİK MOD)
 # ==========================================
 def run_agent_workflow(current_data, historical_memory, raw_links_html):
     print("⏳ AJAN 2 ve 3 çalışıyor...")
@@ -210,10 +208,10 @@ def run_agent_workflow(current_data, historical_memory, raw_links_html):
     final_system_prompt = """Sen Savaş Odası'nın Baş Stratejistisin. Hedef kitlen Siyaset Bilimi öğrencileri.
     
     GÖREVLERİN:
-    1. DERİN ANALİZ: En kritik 3 olayı Teori + Pratik + Gelecek olarak incele.
+    1. ANALİZ: En kritik 3 olayı Teori + Pratik + Gelecek olarak incele.
     2. UFUK TURU: Kalan haberleri listele ve 'Stratejik Önem' analizi yap.
-    3. AKADEMİK REFERANS: Teoriler için (Realizm vb.) akademik künye (DOI) ver.
-    4. LİNKLEME: Haberlerin yanına (<a href='URL' style='color:#2980b9;'>Kaynak</a>) ekle.
+    3. LİNKLEME: Haberlerin yanına (<a href='URL' style='color:#2980b9;'>Kaynak</a>) ekle.
+    4. REFERANS: Teoriler için (Realizm vb.) akademik künye (DOI) ver.
     
     RAPOR ŞABLONU (HTML KULLAN - SİYAH METİN ZORUNLU):
     <div style="background-color:#ffffff; color:#333333 !important; padding:15px; border-radius:10px; border:1px solid #ddd;">
@@ -228,6 +226,7 @@ def run_agent_workflow(current_data, historical_memory, raw_links_html):
         <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Analiz)</p>
         <p style="color:#333333;"><b>Gelecek Projeksiyonu:</b> (Tahmin)</p>
         <br>
+
         <h3 style="color:#2980b9;">2. 🌐 KÜRESEL UFUK TURU (Analitik Özetler)</h3>
         <ul style="color:#333333;">
             <li style="margin-bottom: 8px;">
@@ -248,7 +247,7 @@ def run_agent_workflow(current_data, historical_memory, raw_links_html):
         <div style="background-color:#fffcf5; border:1px solid #ddd; padding:15px; margin-top:20px; color:#333333 !important;">
             <h4 style="color:#856404; margin-top:0;">📚 KULLANILAN AKADEMİK REFERANSLAR (DOI)</h4>
             <ul style="font-size:12px; color:#555;">
-                <li>(Örn: Waltz, Kenneth N. Theory of International Politics. 1979.)</li>
+                <li>(Teorilere ait kitap/makale künyeleri)</li>
             </ul>
         </div>
         
@@ -266,7 +265,7 @@ def run_agent_workflow(current_data, historical_memory, raw_links_html):
     TARİHSEL BAĞLAM: {historical_memory}
     ELEŞTİREL ANALİZ: {critic_report}
     
-    Şablona uyarak raporu yaz. Metinleri SİYAH (#333333) yap.
+    Şablona uy. Metinleri SİYAH (#333333) yap.
     Şablondaki {{critic_report_placeholder}} yerine eleştirel analizi koy.
     Şablondaki {{raw_links_placeholder}} yerine AŞAĞIDAKİ LİSTEYİ HİÇ BOZMADAN koy:
     {raw_links_html}
@@ -300,11 +299,18 @@ def create_audio(text_content):
         return filename
     except: return None
 
-def archive(report_body):
-    date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+# --- DÜZELTME: Dosya isminde UTC+3 Ayarı ---
+def archive(report_body, raw_links):
+    # GitHub sunucusu UTC'dir. Türkiye için +3 saat ekliyoruz.
+    tr_time = datetime.datetime.now() + datetime.timedelta(hours=3)
+    date_str = tr_time.strftime("%Y-%m-%d_%H-%M")
+    
     path = f"ARSIV/Analiz_{date_str}.md"
     if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
-    with open(path, "w", encoding="utf-8") as f: f.write(report_body)
+    
+    full_content = f"{report_body}\n\n<hr>\n<h3>📚 DOĞRULANMIŞ KAYNAKÇA</h3>\n{raw_links}"
+    
+    with open(path, "w", encoding="utf-8") as f: f.write(full_content)
     try:
         subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"])
         subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
@@ -313,7 +319,7 @@ def archive(report_body):
         subprocess.run(["git", "push"])
     except: pass
 
-def send_email_to_council(report_body, audio_file, image_file):
+def send_email_to_council(report_body, raw_links, audio_file, image_file):
     if not ALICI_LISTESI:
         print("❌ HATA: Liste boş!")
         return
@@ -326,15 +332,17 @@ def send_email_to_council(report_body, audio_file, image_file):
         server.starttls()
         server.login(GMAIL_USER, GMAIL_PASSWORD)
         
+        # --- DÜZELTME: Mail Başlığında UTC+3 Ayarı ---
+        tr_today = (datetime.datetime.now() + datetime.timedelta(hours=3)).date()
+        
         for alici in ALICI_LISTESI:
             msg = MIMEMultipart('related')
             msg['From'] = GMAIL_USER
             msg['To'] = alici 
-            msg['Subject'] = f"🧠 SAVAŞ ODASI: Stratejik Derinlik - {datetime.date.today()}"
+            msg['Subject'] = f"🧠 SAVAŞ ODASI: Stratejik Derinlik - {tr_today}"
             msg_alternative = MIMEMultipart('alternative')
             msg.attach(msg_alternative)
 
-            # --- HTML (BUTON TEPEDE + MOBİL UYUMLU + SİYAH METİN) ---
             html_content = f"""
             <html><body style='font-family: "Georgia", serif; color:#222; line-height: 1.6; background-color: #f9f9f9; padding: 20px;'>
                 <div style="max-width: 800px; margin: auto; background: white; padding: 40px; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.05); border-top: 5px solid #c0392b;">
@@ -390,12 +398,12 @@ if __name__ == "__main__":
     raw_data, raw_links_html, current_keywords = fetch_news() 
     memory = read_historical_memory(current_keywords)
     if len(raw_data) > 50: 
-        # Linkleri AI'a veriyoruz ki içine gömsün
         report = run_agent_workflow(raw_data, memory, raw_links_html)
         graph_map = draw_network_graph(raw_data)
         
-        archive(report)
+        archive(report, raw_links_html)
+        
         audio = create_audio(report)
-        send_email_to_council(report, audio, graph_map)
+        send_email_to_council(report, raw_links_html, audio, graph_map)
     else:
         print("Yeterli veri yok, rapor oluşturulmadı.")
