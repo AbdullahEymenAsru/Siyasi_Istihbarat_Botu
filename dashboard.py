@@ -19,7 +19,6 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️", layout="wide")
 
 # --- BURAYA KENDİ SİTE ADRESİNİ YAZ (ÇOK ÖNEMLİ) ---
-# Streamlit uygulamanın tam adresi neyse buraya yapıştır.
 SITE_URL = "https://siyasi-istihbarat-botu.streamlit.app" 
 # ----------------------------------------------------
 
@@ -193,6 +192,7 @@ def harita_analiz(metin):
 if "user" not in st.session_state: st.session_state.user = None
 if "is_guest" not in st.session_state: st.session_state.is_guest = False
 if "password_cache" not in st.session_state: st.session_state.password_cache = None
+# --- HARİTA VERİSİNİ SAKLAMAK İÇİN ---
 if "harita_data" not in st.session_state: st.session_state.harita_data = None
 
 # GİRİŞ EKRANI
@@ -261,9 +261,9 @@ else:
     user_id = st.session_state.user.id
     user_pass = st.session_state.password_cache
 
-    # --- ABONE YÖNETİM PANELİ (Sadece Giriş Yapanlar Görebilir) ---
+    # --- ABONE YÖNETİM PANELİ (Giriş Yapanlara Özel) ---
+    st.sidebar.markdown("---")
     with st.sidebar.expander("👥 Konsey Üyeleri (Mail Listesi)"):
-        # Yeni Üye Ekle
         yeni_abone = st.text_input("Yeni E-posta Ekle", placeholder="arkadas@mail.com")
         if st.button("Listeye Ekle"):
             if yeni_abone:
@@ -275,19 +275,20 @@ else:
                     st.error("Bu mail zaten ekli veya hata oluştu.")
         
         st.markdown("---")
-        
-        # Üyeleri Listele ve Sil
         st.write("📋 **Mevcut Liste:**")
         try:
             aboneler = supabase.table("abone_listesi").select("*").execute().data
-            for abone in aboneler:
-                col_a, col_b = st.columns([4, 1])
-                col_a.text(abone["email"])
-                if col_b.button("❌", key=abone["id"]):
-                    supabase.table("abone_listesi").delete().eq("id", abone["id"]).execute()
-                    st.rerun()
+            if aboneler:
+                for abone in aboneler:
+                    c1, c2 = st.columns([4, 1])
+                    c1.text(abone["email"])
+                    if c2.button("❌", key=f"del_{abone['id']}"):
+                        supabase.table("abone_listesi").delete().eq("id", abone["id"]).execute()
+                        st.rerun()
+            else:
+                st.info("Liste boş.")
         except:
-            st.write("Liste boş.")
+            st.info("Veriye erişilemedi.")
     # -------------------------------------------------------------
 
 if st.sidebar.button("Çıkış Yap"):
@@ -330,8 +331,10 @@ with t1: st.markdown(secilen_icerik, unsafe_allow_html=True)
 with t2:
     if st.button("Haritayı Analiz Et ve Çiz"):
         with st.spinner("Harita çiziliyor..."):
+            # Harita verisini Session State'e kaydediyoruz ki sayfa yenilenince gitmesin
             st.session_state.harita_data = harita_analiz(secilen_icerik)
     
+    # Harita verisi varsa çiz
     if st.session_state.harita_data:
         data = st.session_state.harita_data
         m = folium.Map([39,35], zoom_start=3, tiles="CartoDB dark_matter")
