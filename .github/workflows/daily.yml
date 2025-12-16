@@ -5,10 +5,8 @@ on:
     - cron: '0 5,15 * * *' # Her gün 08:00 ve 18:00 (TSİ)
   workflow_dispatch: # Manuel tetikleme
 
-# --- YAZMA İZNİ (Arşivleme için Şart) ---
 permissions:
   contents: write
-# --------------------------------------
 
 jobs:
   build:
@@ -18,17 +16,21 @@ jobs:
       - name: Depoyu Çek
         uses: actions/checkout@v3
 
-      # --- BURASI YENİ HIZLI BÖLÜM (CACHE AKTİF) ---
-      - name: Set up Python
+      - name: Python Kurulumu
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10' # 3.10 daha stabil ve hızlıdır
-          cache: 'pip' # <--- SİHİRLİ SATIR: Kütüphaneleri hafızada tutar
+          python-version: '3.10'
 
-      - name: Install dependencies
+      # --- ULTRA HIZLI KURULUM (GEREKSİZ AĞIRLIK YOK) ---
+      # requirements.txt yerine sadece main.py için gerekenleri kuruyoruz.
+      # PyTorch, Transformers gibi devasa kütüphaneleri İNDİRMİYORUZ.
+      - name: Install dependencies with uv
         run: |
-          pip install -r requirements.txt
-      # ---------------------------------------------
+          pip install uv
+          uv venv
+          source .venv/bin/activate
+          # Sadece botun çalışması için şart olan hafif paketler:
+          uv pip install feedparser requests trafilatura groq supabase edge-tts networkx matplotlib
 
       - name: Ajanı Çalıştır
         env:
@@ -36,6 +38,8 @@ jobs:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           ALICI_MAIL: ${{ secrets.ALICI_MAIL }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}  # <--- KRİTİK EKLEME
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}  # <--- KRİTİK EKLEME
-        run: python main.py
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          source .venv/bin/activate
+          python main.py
