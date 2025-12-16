@@ -31,15 +31,19 @@ supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABAS
 for folder in ["ARSIV", "VEKTOR_DB"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
-# --- YENİ MANUEL EMBEDDING SINIFI (HATAYI ÇÖZEN KISIM) ---
+# --- YENİ MANUEL EMBEDDING SINIFI (DÜZELTİLDİ) ---
 class YerelEmbedder:
     def __init__(self):
-        # Burada device="cpu" diyerek GPU/Torch hatasını kesin olarak engelliyoruz
+        # device="cpu" diyerek GPU hatasını engelliyoruz
         self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 
     def __call__(self, input):
         # ChromaDB bu formatı bekler
         return self.model.encode(input).tolist()
+    
+    # --- HATAYI ÇÖZEN KISIM BURASI ---
+    def name(self):
+        return "YerelEmbedder"
 
 # --- ŞİFRELEME FONKSİYONLARI ---
 def anahtar_turet(password, salt=b'SavasOdasiSabitTuz'):
@@ -143,7 +147,7 @@ def get_embedding_function():
 
 def hafizayi_guncelle():
     chroma = get_chroma_client()
-    ef = get_embedding_function() # Özel sınıfı kullanıyoruz
+    ef = get_embedding_function()
     
     col = chroma.get_or_create_collection(name="savas_odasi", embedding_function=ef)
     dosyalar = glob.glob("ARSIV/*.md")
@@ -157,7 +161,7 @@ def hafizayi_guncelle():
 
 def hafizadan_getir(soru):
     try:
-        ef = get_embedding_function() # Özel sınıfı kullanıyoruz
+        ef = get_embedding_function() 
         col = get_chroma_client().get_collection(name="savas_odasi", embedding_function=ef)
         res = col.query(query_texts=[soru], n_results=3)
         return "\n".join(res['documents'][0]) if res['documents'] else "Arşivde bilgi yok."
@@ -302,7 +306,9 @@ with t3:
             buluta_kaydet(user_id, st.session_state.messages, user_pass)
         
         with st.status("Analiz yapılıyor...") as s:
+            st.write("📂 Arşiv taranıyor (RAG)...")
             arsiv = hafizadan_getir(q)
+            st.write("🌐 İnternet taranıyor (Web)...")
             web = web_ara(q)
             s.update(label="Tamamlandı", state="complete")
         
