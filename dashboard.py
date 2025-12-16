@@ -16,7 +16,7 @@ except:
 
 # Klasör Kontrolleri
 if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
-if not os.path.exists("LOGS"): os.makedirs("LOGS") # Sohbet kayıtları burada tutulacak
+if not os.path.exists("LOGS"): os.makedirs("LOGS")
 
 # --- FONKSİYONLAR ---
 def gecmisi_yukle(kullanici_adi):
@@ -33,17 +33,19 @@ def gecmisi_kaydet(kullanici_adi, mesajlar):
     with open(dosya_yolu, "w", encoding="utf-8") as f:
         json.dump(mesajlar, f, ensure_ascii=False, indent=4)
 
-# 2. YAN MENÜ: KİMLİK DOĞRULAMA VE DOSYA SEÇİMİ
+# 2. YAN MENÜ: KİMLİK DOĞRULAMA
 st.sidebar.title("🔐 GÜVENLİK GİRİŞİ")
 
-# Kullanıcı Kimliği (Buraya ne yazarsan sohbet o isme kaydedilir)
-ajan_kodu = st.sidebar.text_input("Ajan Kod Adı / Parola:", value="Misafir", help="Sohbet geçmişinizin saklanması için benzersiz bir ad girin.")
+# Varsayılan değeri boş ("") yaptık. Placeholder ile ne yapması gerektiğini söylüyoruz.
+ajan_kodu = st.sidebar.text_input("Ajan Kod Adı / Parola:", value="", placeholder="Örn: Eymen007", help="Sohbet geçmişi bu isme kaydedilir.")
 
-# Sohbeti Temizle Butonu
 if st.sidebar.button("🧹 Sohbeti Sıfırla"):
-    st.session_state.messages = []
-    gecmisi_kaydet(ajan_kodu, [])
-    st.rerun()
+    if ajan_kodu:
+        st.session_state.messages = []
+        gecmisi_kaydet(ajan_kodu, [])
+        st.rerun()
+    else:
+        st.sidebar.error("Önce giriş yapmalısınız!")
 
 st.sidebar.markdown("---")
 st.sidebar.title("🗄️ İSTİHBARAT ARŞİVİ")
@@ -55,7 +57,7 @@ try:
     dosya_isimleri = [os.path.basename(f) for f in dosyalar]
 except: dosya_isimleri = []
 
-# Tüm Arşiv Metni (AI Hafızası)
+# Tüm Arşiv Metni
 tum_arsiv_metni = ""
 if dosyalar:
     for dosya in dosyalar[:10]: 
@@ -74,21 +76,37 @@ else:
     with open(os.path.join("ARSIV", secilen_dosya), "r", encoding="utf-8") as f:
         secilen_dosya_icerigi = f.read()
 
-# 3. OTURUM YÖNETİMİ (Session State)
-# Sayfa yenilendiğinde önce dosyadan geçmişi çekmeye çalış
+# 3. ANA EKRAN VE GİRİŞ KONTROLÜ
+st.title("🛡️ KÜRESEL SAVAŞ ODASI")
+
+# Eğer kullanıcı adı girilmemişse, ekranı kilitle!
+if not ajan_kodu:
+    st.warning("⚠️ LÜTFEN GİRİŞ YAPINIZ")
+    st.info("Sol menüdeki **'Güvenlik Girişi'** kutusuna kod adınızı yazıp Enter'a basınız. Bu işlem sohbet güvenliğiniz için zorunludur.")
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.subheader(f"📄 Görüntülenen Rapor (Önizleme)")
+        st.markdown(secilen_dosya_icerigi, unsafe_allow_html=True)
+    with col2:
+        st.subheader("🚫 Erişim Engellendi")
+        st.error("Yapay Zeka ile görüşmek için kimlik doğrulaması gereklidir.")
+    
+    st.stop() # Kodun geri kalanını çalıştırma (Giriş yapılana kadar dur)
+
+# --- BURADAN AŞAĞISI SADECE GİRİŞ YAPILINCA ÇALIŞIR ---
+
+# Oturum Yönetimi
 if "messages" not in st.session_state:
     st.session_state.messages = gecmisi_yukle(ajan_kodu)
 
-# Eğer kullanıcı adını değiştirirse geçmişi güncelle
 if "last_user" not in st.session_state:
     st.session_state.last_user = ajan_kodu
 elif st.session_state.last_user != ajan_kodu:
     st.session_state.messages = gecmisi_yukle(ajan_kodu)
     st.session_state.last_user = ajan_kodu
 
-# 4. ANA EKRAN
-st.title("🛡️ KÜRESEL SAVAŞ ODASI")
-st.markdown(f"**Aktif Oturum:** `{ajan_kodu}` | *Geçmiş otomatik kaydediliyor...*")
+st.success(f"✅ Oturum Açıldı: **{ajan_kodu}**")
 st.markdown("---")
 
 col1, col2 = st.columns([1, 1])
@@ -102,20 +120,16 @@ with col1:
 with col2:
     st.subheader("🧠 Baş Stratejist ile Konuş")
     
-    # Mesajları Ekrana Bas
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Yeni Soru Al
     if prompt := st.chat_input("Analiz emriniz nedir komutanım?"):
-        # 1. Kullanıcı Mesajını Ekle ve Kaydet
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-        gecmisi_kaydet(ajan_kodu, st.session_state.messages) # Anlık Kayıt
+        gecmisi_kaydet(ajan_kodu, st.session_state.messages)
 
-        # 2. AI Cevabı
         with st.chat_message("assistant"):
             try:
                 stream = client.chat.completions.create(
@@ -139,9 +153,8 @@ with col2:
 
                 response = st.write_stream(stream_data_generator())
                 
-                # 3. AI Cevabını Ekle ve Kaydet
                 st.session_state.messages.append({"role": "assistant", "content": response})
-                gecmisi_kaydet(ajan_kodu, st.session_state.messages) # Anlık Kayıt
+                gecmisi_kaydet(ajan_kodu, st.session_state.messages)
 
             except Exception as e:
                 st.error(f"Hata: {e}")
