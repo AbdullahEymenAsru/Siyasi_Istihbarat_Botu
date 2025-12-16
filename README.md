@@ -37,7 +37,9 @@ Sistemi yerel makinenizde ayağa kaldırmak için:
    pip install -r requirements.txt
 
    streamlit run dashboard.py
-   
+
+NOT: !!!Sistemi başlatmadan önce .streamlit/secrets.toml dosyasını oluşturduğunuzdan ve anahtarlarınızı eklediğinizden emin olun.!!!
+
 ---
 🔐 Güvenlik ve Anahtarlar (Secrets)
 Sistemin tam kapasite çalışması için aşağıdaki anahtarların GitHub Secrets ve Streamlit Secrets bölümlerine tanımlanması ZORUNLUDUR:
