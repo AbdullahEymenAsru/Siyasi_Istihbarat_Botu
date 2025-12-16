@@ -4,7 +4,8 @@ import glob
 import json
 import base64
 import chromadb
-from chromadb.utils import embedding_functions
+# Hazır embedding fonksiyonunu kaldırdık, manuel yazacağız
+from sentence_transformers import SentenceTransformer 
 from groq import Groq
 from duckduckgo_search import DDGS
 import folium
@@ -30,20 +31,23 @@ supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABAS
 for folder in ["ARSIV", "VEKTOR_DB"]:
     if not os.path.exists(folder): os.makedirs(folder)
 
+# --- YENİ MANUEL EMBEDDING SINIFI (HATAYI ÇÖZEN KISIM) ---
+class YerelEmbedder:
+    def __init__(self):
+        # Burada device="cpu" diyerek GPU/Torch hatasını kesin olarak engelliyoruz
+        self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+
+    def __call__(self, input):
+        # ChromaDB bu formatı bekler
+        return self.model.encode(input).tolist()
+
 # --- ŞİFRELEME FONKSİYONLARI ---
 def anahtar_turet(password, salt=b'SavasOdasiSabitTuz'):
-    """Kullanıcı şifresinden 32-byte şifreleme anahtarı türetir."""
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=100000,
-    )
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000)
     key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
     return key
 
 def sifrele(veri_json, password):
-    """Veriyi şifreler."""
     try:
         key = anahtar_turet(password)
         f = Fernet(key)
@@ -53,7 +57,6 @@ def sifrele(veri_json, password):
     except: return None
 
 def sifreyi_coz(sifreli_str, password):
-    """Veriyi çözer."""
     try:
         key = anahtar_turet(password)
         f = Fernet(key)
@@ -103,18 +106,15 @@ def kayit_ol(email, password):
         return None
 
 def sifre_sifirla(email):
-    """Şifre sıfırlama maili gönderir."""
     try:
-        # Redirect URL, Streamlit uygulamasının adresi olmalı
         site_url = "https://siyasi-istihbarat-botu.streamlit.app"
         supabase.auth.reset_password_email(email, options={"redirect_to": site_url})
         st.success(f"📧 Sıfırlama bağlantısı {email} adresine gönderildi.")
-        st.warning("⚠️ DİKKAT: Şifrenizi değiştirdiğinizde, eski şifrenizle kilitlenmiş olan sohbet geçmişiniz OKUNAMAZ hale gelecektir (Silinecektir).")
+        st.warning("⚠️ DİKKAT: Şifrenizi değiştirdiğinizde, eski sohbet geçmişiniz OKUNAMAZ hale gelecektir.")
     except Exception as e:
         st.error(f"Mail gönderme hatası: {e}")
 
 def buluttan_yukle(user_id, password):
-    """Supabase'den şifreli veriyi çeker ve kullanıcının şifresiyle çözer."""
     try:
         response = supabase.table("chat_logs").select("messages").eq("user_id", user_id).execute()
         if response.data:
@@ -125,7 +125,6 @@ def buluttan_yukle(user_id, password):
     return []
 
 def buluta_kaydet(user_id, messages, password):
-    """Sohbeti şifreler ve Supabase'e gönderir."""
     try:
         sifreli_veri = sifrele(messages, password)
         data = {"user_id": user_id, "messages": {"encrypted_data": sifreli_veri}}
@@ -137,14 +136,14 @@ def buluta_kaydet(user_id, messages, password):
 def get_chroma_client():
     return chromadb.PersistentClient(path="VEKTOR_DB")
 
+# Önbellekte tutulan embedding modelini yükle
+@st.cache_resource
+def get_embedding_function():
+    return YerelEmbedder()
+
 def hafizayi_guncelle():
     chroma = get_chroma_client()
-    
-    # GPU HATASINI ÖNLEMEK İÇİN DEVICE="CPU" EKLENDİ
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2",
-        device="cpu"
-    )
+    ef = get_embedding_function() # Özel sınıfı kullanıyoruz
     
     col = chroma.get_or_create_collection(name="savas_odasi", embedding_function=ef)
     dosyalar = glob.glob("ARSIV/*.md")
@@ -158,11 +157,7 @@ def hafizayi_guncelle():
 
 def hafizadan_getir(soru):
     try:
-        # GPU HATASINI ÖNLEMEK İÇİN BURADA DA CPU BELİRTİYORUZ
-        ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2",
-            device="cpu"
-        )
+        ef = get_embedding_function() # Özel sınıfı kullanıyoruz
         col = get_chroma_client().get_collection(name="savas_odasi", embedding_function=ef)
         res = col.query(query_texts=[soru], n_results=3)
         return "\n".join(res['documents'][0]) if res['documents'] else "Arşivde bilgi yok."
@@ -209,7 +204,7 @@ if not st.session_state.user and not st.session_state.is_guest:
                 st.session_state.messages = buluttan_yukle(user.id, password)
                 st.rerun()
                 
-        # ŞİFREMİ UNUTTUM BÖLÜMÜ (YENİ ENTEGRE EDİLDİ)
+        # ŞİFREMİ UNUTTUM
         with st.expander("❓ Şifremi Unuttum"):
             st.info("E-posta adresinizi girin, sıfırlama bağlantısı gönderelim.")
             reset_mail = st.text_input("Kayıtlı E-posta Adresi")
@@ -234,9 +229,8 @@ if not st.session_state.user and not st.session_state.is_guest:
             
     st.stop() 
 
-# --- GİRİŞ YAPILDI (ÜYE veya MİSAFİR) ---
+# --- GİRİŞ YAPILDI ---
 
-# Yan Menü Ayarları
 if st.session_state.is_guest:
     st.sidebar.warning("🕵️ MOD: MİSAFİR (Kayıt Yok)")
     user_id = "guest"
@@ -256,7 +250,6 @@ if st.sidebar.button("Çıkış Yap"):
 
 st.sidebar.markdown("---")
 
-# Geçmişi Temizle (Sadece Üyeler İçin Veritabanını Siler)
 if st.sidebar.button("🧹 Sohbeti Temizle"):
     st.session_state.messages = []
     if not st.session_state.is_guest:
