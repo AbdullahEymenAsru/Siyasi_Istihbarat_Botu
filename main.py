@@ -32,7 +32,7 @@ client = Groq(api_key=GROQ_API_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 plt.switch_backend('Agg')
 
-# --- KAYNAK HAVUZU (v28.0) ---
+# --- KAYNAK HAVUZU (v29.0) ---
 rss_sources = {
     'BBC World': 'http://feeds.bbci.co.uk/news/world/rss.xml',
     'CNN International': 'http://rss.cnn.com/rss/edition.rss',
@@ -185,7 +185,6 @@ def draw_network_graph(text_data):
 # ==========================================
 def run_agent_workflow(current_data, historical_memory):
     
-    # Tarihçi ve Eleştirmen aynı kalıyor...
     print("⏳ AJAN 2 ve 3 çalışıyor...")
     historian_report = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -199,7 +198,6 @@ def run_agent_workflow(current_data, historical_memory):
 
     print("✍️ AJAN 4 (CHIEF EDITOR): Nihai raporu ŞABLONA GÖRE yazıyor...")
     
-    # --- YENİ HTML ŞABLONU VE KATI KURALLAR ---
     final_system_prompt = """Sen Savaş Odası Başkanısın. Raporun okunabilirliği her şeyden önemlidir.
     
     KATI BİÇİM KURALLARI (FORMAT):
@@ -255,13 +253,13 @@ def run_agent_workflow(current_data, historical_memory):
             {"role": "system", "content": final_system_prompt},
             {"role": "user", "content": final_user_prompt}
         ],
-        temperature=0.4 # Daha tutarlı format için sıcaklığı düşürdük
+        temperature=0.4
     ).choices[0].message.content
     
     return final_report
 
 # ==========================================
-# 6. SES & MAİL (GÜZELLEŞTİRİLMİŞ HTML)
+# 6. SES & MAİL (GÜZELLEŞTİRİLMİŞ HTML + DASHBOARD LINK)
 # ==========================================
 async def generate_voice(text, output_file):
     communicate = edge_tts.Communicate(text, SES_MODELI)
@@ -269,7 +267,7 @@ async def generate_voice(text, output_file):
 
 def create_audio(text_content):
     print("🎙️ Seslendiriliyor...")
-    clean_text = re.sub('<[^<]+?>', '', text_content) # HTML taglerini temizle
+    clean_text = re.sub('<[^<]+?>', '', text_content)
     clean_text = re.sub(r'http\S+', '', clean_text)
     script = "Sayın Konsey Üyeleri. Küresel İstihbarat Raporu arz edilir. " + clean_text[:900]
     filename = "Gunluk_Brifing.mp3"
@@ -294,13 +292,16 @@ def archive(report_body):
 def send_email_to_council(report_body, raw_links, audio_file, image_file):
     print(f"📧 Dağıtım Başlıyor: {len(ALICI_LISTESI)} Kişi")
     
+    # ⚠️ ÖNEMLİ: STREAMLIT PROJE LINKINI BURAYA YAPIŞTIRIN
+    CANLI_DASHBOARD_LINKI = "https://savas-odasi.streamlit.app" 
+    
     saat = datetime.datetime.now().hour + 3 
     if 5 <= saat < 13:
         baslik_ek = "🌅 SABAH İSTİHBARATI (Morning Brief)"
-        renk = "#2980b9" # Mavi tema
+        renk = "#2980b9"
     else:
         baslik_ek = "🌙 AKŞAM ÖZETİ VE ANALİZ (Evening Wrap-up)"
-        renk = "#2c3e50" # Koyu tema
+        renk = "#2c3e50"
 
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -308,7 +309,6 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
         server.login(GMAIL_USER, GMAIL_PASSWORD)
         
         for alici in ALICI_LISTESI:
-            print(f"   -> Gönderiliyor: {alici}")
             msg = MIMEMultipart('related')
             msg['From'] = GMAIL_USER
             msg['To'] = alici 
@@ -316,16 +316,17 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
             msg_alternative = MIMEMultipart('alternative')
             msg.attach(msg_alternative)
 
-            # --- PROFESYONEL MAİL TASARIMI ---
             html_content = f"""
-            <html><body style='font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; color:#333; line-height: 1.6; background-color: #f4f4f4; padding: 20px;'>
-                
+            <html><body style='font-family: "Segoe UI", sans-serif; color:#333; line-height: 1.6; background-color: #f4f4f4; padding: 20px;'>
                 <div style="max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
                     
                     <div style="text-align: center; border-bottom: 3px solid {renk}; padding-bottom: 20px; margin-bottom: 20px;">
                         <h1 style="color:{renk}; margin: 0;">🛡️ SAVAŞ ODASI</h1>
                         <h3 style="color:#555; margin-top: 5px;">{baslik_ek}</h3>
-                        <p style="font-size: 12px; color: #888;">YZ Destekli Stratejik Analiz • Telegram/OSINT Entegrasyonu</p>
+                        
+                        <a href="{CANLI_DASHBOARD_LINKI}" style="display: inline-block; background-color: #c0392b; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 10px;">
+                           💬 YAPAY ZEKA İLE CANLI KONUŞ
+                        </a>
                     </div>
 
                     <center>
@@ -336,9 +337,7 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
                     </center>
                     <br>
 
-                    <div style="font-size: 15px;">
-                        {report_body}
-                    </div>
+                    <div style="font-size: 15px;">{report_body}</div>
                     
                     <br><hr style="border: 0; border-top: 1px solid #eee;">
                     
@@ -347,9 +346,9 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
                         {raw_links}
                     </div>
                     
-                    <p style="text-align: center; font-size: 10px; color: #aaa; margin-top: 20px;">
-                        Bu rapor Yapay Zeka (Llama-3) tarafından otonom olarak üretilmiştir. Kesin yatırım veya askeri tavsiye niteliği taşımaz.
-                    </p>
+                    <div style="text-align:center; margin-top:20px;">
+                        <a href="{CANLI_DASHBOARD_LINKI}" style="color: #2980b9; font-weight: bold;">📊 Tüm Arşivi ve Detaylı Analizi Dashboard'da Gör</a>
+                    </div>
                 </div>
             </body></html>
             """
