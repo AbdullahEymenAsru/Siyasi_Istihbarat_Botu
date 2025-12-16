@@ -12,3 +12,4 @@ sentence-transformers
 duckduckgo-search
 folium
 streamlit-folium
+supabase
