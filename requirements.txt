@@ -1,12 +1,14 @@
+streamlit
+groq
 feedparser
 requests
-groq
-edge-tts
+beautifulsoup4
 networkx
 matplotlib
 scipy
 trafilatura
-streamlit
 chromadb
 sentence-transformers
 duckduckgo-search
+folium
+streamlit-folium
