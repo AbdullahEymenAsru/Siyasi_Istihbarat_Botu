@@ -105,8 +105,7 @@ def kayit_ol(email, password):
 def sifre_sifirla(email):
     """Şifre sıfırlama maili gönderir."""
     try:
-        # Redirect URL, Streamlit uygulamasının adresi olmalı (yoksa localhost'a dönebilir)
-        # Eğer canlıda ise buraya uygulamanızın linkini koyun.
+        # Redirect URL, Streamlit uygulamasının adresi olmalı
         site_url = "https://siyasi-istihbarat-botu.streamlit.app"
         supabase.auth.reset_password_email(email, options={"redirect_to": site_url})
         st.success(f"📧 Sıfırlama bağlantısı {email} adresine gönderildi.")
@@ -140,7 +139,13 @@ def get_chroma_client():
 
 def hafizayi_guncelle():
     chroma = get_chroma_client()
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+    
+    # GPU HATASINI ÖNLEMEK İÇİN DEVICE="CPU" EKLENDİ
+    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name="all-MiniLM-L6-v2",
+        device="cpu"
+    )
+    
     col = chroma.get_or_create_collection(name="savas_odasi", embedding_function=ef)
     dosyalar = glob.glob("ARSIV/*.md")
     yeni = False
@@ -153,7 +158,12 @@ def hafizayi_guncelle():
 
 def hafizadan_getir(soru):
     try:
-        col = get_chroma_client().get_collection(name="savas_odasi", embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2"))
+        # GPU HATASINI ÖNLEMEK İÇİN BURADA DA CPU BELİRTİYORUZ
+        ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2",
+            device="cpu"
+        )
+        col = get_chroma_client().get_collection(name="savas_odasi", embedding_function=ef)
         res = col.query(query_texts=[soru], n_results=3)
         return "\n".join(res['documents'][0]) if res['documents'] else "Arşivde bilgi yok."
     except: return "Hafıza hatası."
@@ -199,7 +209,7 @@ if not st.session_state.user and not st.session_state.is_guest:
                 st.session_state.messages = buluttan_yukle(user.id, password)
                 st.rerun()
                 
-        # ŞİFREMİ UNUTTUM BÖLÜMÜ (YENİ)
+        # ŞİFREMİ UNUTTUM BÖLÜMÜ (YENİ ENTEGRE EDİLDİ)
         with st.expander("❓ Şifremi Unuttum"):
             st.info("E-posta adresinizi girin, sıfırlama bağlantısı gönderelim.")
             reset_mail = st.text_input("Kayıtlı E-posta Adresi")
