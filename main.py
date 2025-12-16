@@ -32,49 +32,40 @@ client = Groq(api_key=GROQ_API_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 plt.switch_backend('Agg')
 
-# --- DEVASA STRATEJİK KAYNAK HAVUZU (v26.0 - TELEGRAM GENİŞLETİLDİ) ---
+# --- DEVASA STRATEJİK KAYNAK HAVUZU (v27.0) ---
 rss_sources = {
-    # --- BATI VE AVRUPA (NATO MERKEZLİ) ---
+    # --- BATI & NATO ---
     'BBC World': 'http://feeds.bbci.co.uk/news/world/rss.xml',
     'CNN International': 'http://rss.cnn.com/rss/edition.rss',
-    'Voice of America (VOA)': 'https://www.voanews.com/api/zg$oq_et$p',
+    'Voice of America': 'https://www.voanews.com/api/zg$oq_et$p',
     'Foreign Policy': 'https://foreignpolicy.com/feed/',
     'Deutsche Welle': 'https://rss.dw.com/xml/rss-en-all',
-    
-    # --- TÜRKİYE VE ORTADOĞU ---
+
+    # --- TÜRKİYE & ORTADOĞU ---
     'TRT World': 'https://www.trtworld.com/rss',
     'Turkiye Arastirmalari Vakfi': 'https://tav.org.tr/feed/',
     'SETA Vakfi': 'https://www.setav.org/feed/',
     'Al Jazeera': 'https://www.aljazeera.com/xml/rss/all.xml',
     'Times of Israel': 'https://www.timesofisrael.com/feed/',
     'Tehran Times': 'https://www.tehrantimes.com/rss',
-    
-    # --- ASYA - PASİFİK VE DOĞU BLOKU ---
+
+    # --- DOĞU BLOKU ---
     'TASS (Russia)': 'https://tass.com/rss/v2.xml',
     'China Daily': 'https://www.chinadaily.com.cn/rss/world_rss.xml',
     'Yonhap (Korea)': 'https://en.yna.co.kr/RSS/news.xml',
     'Times of India': 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
 
-    # --- 🔥 TELEGRAM & OSINT (HOT ZONE - YENİ EKLENENLER) ---
-    # Not: RSSHub köprüsü kullanılarak Telegram kanalları okunuyor.
-    
-    # 1. TÜRKİYE MERKEZLİ OSINT & SAVUNMA
-    'Clash Report (Telegram)': 'https://rsshub.app/telegram/channel/clashreport', # Türk kökenli en hızlı küresel OSINT
-    'SavunmaSanayiST (Telegram)': 'https://rsshub.app/telegram/channel/savunmasanayist', # Türk Savunma Sanayii
-    
-    # 2. RUSYA - UKRAYNA SAHASI
-    'Rybar (Telegram)': 'https://rsshub.app/telegram/channel/rybar', # Rus tarafının en detaylı askeri harita ve analiz kanalı
-    'Intel Slava (Telegram)': 'https://rsshub.app/telegram/channel/intelslava', # Rus perspektifi (Sansürsüz)
-    'Zelenskiy Official (Telegram)': 'https://rsshub.app/telegram/channel/V_Zelenskiy_official', # Ukrayna Resmi
-    
-    # 3. ORTADOĞU (GAZZE/İSRAİL)
-    'Gaza Now (Telegram)': 'https://rsshub.app/telegram/channel/gazaalannet', # Gazze Sahası
-    'IDF Official (Telegram)': 'https://rsshub.app/telegram/channel/idfofficial', # İsrail Ordusu Resmi
-    
-    # 4. KÜRESEL & ABD SON DAKİKA
-    'Insider Paper (Telegram)': 'https://rsshub.app/telegram/channel/insiderpaper', # ABD merkezli çok hızlı son dakika
-    'Geopolitics Live (Telegram)': 'https://rsshub.app/telegram/channel/geopolitics_live', # Küresel jeopolitik (Çin/Rusya yanlısı bakış)
-    'Bellincat (OSINT)': 'https://www.bellingcat.com/feed/' # Araştırmacı Gazetecilik
+    # --- 🔥 TELEGRAM & OSINT (HOT ZONE) ---
+    'Clash Report (Telegram)': 'https://rsshub.app/telegram/channel/clashreport', 
+    'SavunmaSanayiST (Telegram)': 'https://rsshub.app/telegram/channel/savunmasanayist', 
+    'Rybar (Telegram)': 'https://rsshub.app/telegram/channel/rybar', 
+    'Intel Slava (Telegram)': 'https://rsshub.app/telegram/channel/intelslava', 
+    'Zelenskiy Official (Telegram)': 'https://rsshub.app/telegram/channel/V_Zelenskiy_official', 
+    'Gaza Now (Telegram)': 'https://rsshub.app/telegram/channel/gazaalannet', 
+    'IDF Official (Telegram)': 'https://rsshub.app/telegram/channel/idfofficial', 
+    'Insider Paper (Telegram)': 'https://rsshub.app/telegram/channel/insiderpaper', 
+    'Geopolitics Live (Telegram)': 'https://rsshub.app/telegram/channel/geopolitics_live', 
+    'Bellincat (OSINT)': 'https://www.bellingcat.com/feed/' 
 }
 
 KRITIK_AKTORLER = ["Turkey", "Türkiye", "Erdoğan", "Fidan", "Biden", "Trump", "Putin", "Xi Jinping", "Zelensky", "Netanyahu", "Hamas", "NATO", "EU", "Iran", "China", "Russia", "Pakistan", "India", "Korea", "IDF", "Wagner", "TSK", "Pentagon"]
@@ -329,6 +320,16 @@ def archive(report_body):
 
 def send_email_to_council(report_body, raw_links, audio_file, image_file):
     print(f"📧 Dağıtım Başlıyor: {len(ALICI_LISTESI)} Kişi")
+    
+    # Şu anki saati al (UTC+3 Türkiye Saati)
+    saat = datetime.datetime.now().hour + 3 
+    
+    # Sadece Sabah ve Akşam ayrımı
+    if 5 <= saat < 13:
+        baslik_ek = "🌅 SABAH İSTİHBARATI (Morning Brief)"
+    else:
+        baslik_ek = "🌙 AKŞAM ÖZETİ VE ANALİZ (Evening Wrap-up)"
+
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
@@ -339,14 +340,18 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
             msg = MIMEMultipart('related')
             msg['From'] = GMAIL_USER
             msg['To'] = alici 
-            msg['Subject'] = f"🧠 KÜRESEL İSTİHBARAT RAPORU - {datetime.date.today()}"
+            
+            # Dinamik Başlık
+            msg['Subject'] = f"🧠 {baslik_ek} - {datetime.date.today()}"
+            
             msg_alternative = MIMEMultipart('alternative')
             msg.attach(msg_alternative)
 
             html_content = f"""
             <html><body style='font-family: Arial, sans-serif; color:#333;'>
                 <h1 style="color:#2c3e50; text-align:center;">🛡️ SAVAŞ ODASI</h1>
-                <p style="text-align:center;"><i>"Telegram/OSINT Destekli Analiz"</i></p>
+                <h3 style="text-align:center; color:#c0392b;">{baslik_ek}</h3>
+                <p style="text-align:center;"><i>"Büyük Veri Analizli Stratejik Rapor"</i></p>
                 <hr>
                 <center>
                     <h3>🕸️ GÜNLÜK ETKİLEŞİM AĞI</h3>
@@ -363,12 +368,14 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
             </body></html>
             """
             msg_alternative.attach(MIMEText(html_content, 'html'))
+            
             if image_file and os.path.exists(image_file):
                 with open(image_file, 'rb') as f:
                     img = MIMEImage(f.read())
                     img.add_header('Content-ID', '<network_map>')
                     img.add_header('Content-Disposition', 'inline', filename=image_file)
                     msg.attach(img)
+            
             if audio_file and os.path.exists(audio_file):
                 with open(audio_file, "rb") as f:
                     part = MIMEBase('application', 'octet-stream')
@@ -378,6 +385,7 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
                 msg.attach(part)
             
             server.sendmail(GMAIL_USER, alici, msg.as_string())
+        
         server.quit()
         print("✅ Dağıtım tamamlandı!")
     except Exception as e:
@@ -386,6 +394,7 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
 if __name__ == "__main__":
     raw_data, raw_links, current_keywords = fetch_news()
     memory = read_historical_memory(current_keywords)
+    
     if len(raw_data) > 20:
         report = run_agent_workflow(raw_data, memory)
         graph_map = draw_network_graph(raw_data)
