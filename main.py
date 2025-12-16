@@ -10,6 +10,7 @@ import re
 import networkx as nx
 import matplotlib.pyplot as plt
 import edge_tts
+import trafilatura # <--- YENİ KÜTÜPHANE (TAM METİN İÇİN)
 from groq import Groq
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -51,8 +52,10 @@ rss_sources = {
     'Times of India': 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms'
 }
 
+KRITIK_AKTORLER = ["Turkey", "Türkiye", "Erdoğan", "Fidan", "Biden", "Trump", "Putin", "Xi Jinping", "Zelensky", "Netanyahu", "Hamas", "NATO", "EU", "Iran", "China", "Russia", "Pakistan", "India", "Korea"]
+
 # ==========================================
-# 2. AJAN 1: RESEARCHER (VERİ TOPLAYICI)
+# 2. AJAN 1: RESEARCHER (VERİ TOPLAYICI & SCRAPER) 🕷️
 # ==========================================
 def calculate_priority_score(title, summary):
     score = 0
@@ -69,14 +72,28 @@ def calculate_priority_score(title, summary):
     
     return score
 
+def get_full_text(url):
+    """Linke gider ve haberin tamamını indirir (Scraping)"""
+    try:
+        downloaded = trafilatura.fetch_url(url)
+        if downloaded:
+            text = trafilatura.extract(downloaded)
+            if text:
+                # Çok uzunsa kırp (Token limitini korumak için)
+                return text[:2500] 
+    except:
+        pass
+    return None
+
 def fetch_news():
-    print("🕵️‍♂️ AJAN 1: Genişletilmiş ağ taranıyor...")
+    print("🕵️‍♂️ AJAN 1: Genişletilmiş ağ taranıyor ve KRİTİK haberler okunuyor...")
     all_news = []
     headers = {'User-Agent': 'Mozilla/5.0'}
     
+    # 1. ADIM: RSS TARAMA VE PUANLAMA
     for source, url in rss_sources.items():
         try:
-            resp = requests.get(url, headers=headers, timeout=25)
+            resp = requests.get(url, headers=headers, timeout=20)
             feed = feedparser.parse(resp.content)
             if feed.entries:
                 for i, entry in enumerate(feed.entries[:3]):
@@ -90,37 +107,80 @@ def fetch_news():
                     all_news.append({"source": source, "title": title, "link": link, "summary": summary, "score": score})
         except: continue
 
+    # 2. ADIM: EN KRİTİK HABERLERİ SEÇME
     all_news.sort(key=lambda x: x['score'], reverse=True)
-    top_news = all_news[:7] 
+    top_news = all_news[:6] # En önemli 6 haberi seç
     
     buffer = ""
     raw_links_html = "<ul>"
+    
+    # 3. ADIM: SEÇİLENLER İÇİN TAM METİN İNDİRME (SCRAPING)
+    print("🕷️  AJAN 1: Seçilen haberlerin detaylarına iniliyor (Deep Dive)...")
+    
+    current_keywords = [] # Hafıza araması için anahtar kelimeler biriktiriyoruz
+
     for news in top_news:
+        full_text = get_full_text(news['link'])
+        
+        # Eğer tam metin çekebildiysek onu kullan, yoksa özeti kullan
+        content_to_use = full_text if full_text else news['summary']
+        content_type = "TAM METİN" if full_text else "ÖZET"
+        
         icon = "🚨" if news['score'] >= 50 else "🔹"
-        buffer += f"[{news['source']}] {icon} {news['title']} | URL: {news['link']}\n"
+        buffer += f"[{news['source']}] {icon} {news['title']} ({content_type})\nİÇERİK: {content_to_use[:1000]}...\nURL: {news['link']}\n\n"
+        
         raw_links_html += f"<li><b>{news['source']}:</b> <a href='{news['link']}'>{news['title']}</a></li>"
+        
+        # Başlıktaki kelimeleri hafıza için sakla
+        current_keywords.extend(news['title'].lower().split())
+    
     raw_links_html += "</ul>"
     
-    return buffer, raw_links_html
+    return buffer, raw_links_html, current_keywords
 
 # ==========================================
-# 3. HAFIZA
+# 3. AKILLI HAFIZA (CONTEXT-AWARE MEMORY) 🧠
 # ==========================================
-def read_historical_memory():
+def read_historical_memory(current_keywords):
+    print("🧠 HAFIZA MODÜLÜ: Geçmişte bugüne benzer olaylar aranıyor...")
+    
     memory_buffer = ""
     files = glob.glob("ARSIV/*.md")
     files.sort(key=os.path.getmtime, reverse=True)
+    
+    # Gereksiz kelimeleri temizle
+    stop_words = ["the", "in", "at", "on", "for", "to", "and", "a", "of", "is", "with", "haber", "son", "dakika"]
+    keywords = [k for k in current_keywords if len(k) > 4 and k not in stop_words]
+    keywords = list(set(keywords))[:5] # En önemli 5 kelime
+    
+    print(f"   -> Aranan Kavramlar: {keywords}")
+
+    found_count = 0
     total_chars = 0
     SAFE_LIMIT = 12000 
+    
     for file_path in files:
         if total_chars > SAFE_LIMIT: break
+        
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
             filename = os.path.basename(file_path)
-            short_content = content[:1500]
-            memory_buffer += f"\n--- GEÇMİŞ ({filename}) ---\n{short_content}...\n"
-            total_chars += len(short_content)
-    if not memory_buffer: return "Yeterli kayıt yok."
+            
+            # RELEVANCE PUANI: Dosyada anahtar kelimeler geçiyor mu?
+            relevance = sum(content.lower().count(k) for k in keywords)
+            
+            # Eğer alakalıysa veya çok yeniyse (son 2 gün) hafızaya al
+            is_recent = (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(file_path))).days < 2
+            
+            if relevance > 0 or is_recent:
+                # İlgili kısımları al (Tamamını değil)
+                short_content = content[:2000]
+                memory_buffer += f"\n--- GEÇMİŞ RAPOR ({filename}) [Alaka: {relevance}] ---\n{short_content}...\n"
+                total_chars += len(short_content)
+                found_count += 1
+                
+    if not memory_buffer: return "Arşivde ilgili kayıt bulunamadı."
+    print(f"   -> {found_count} adet ilgili geçmiş rapor bulundu.")
     return memory_buffer
 
 # ==========================================
@@ -129,7 +189,6 @@ def read_historical_memory():
 def draw_network_graph(text_data):
     print("🗺️ AJAN 5: İlişkileri analiz edip harita çiziyor...")
     
-    # AI'ya soruyoruz: Kim kiminle ilişkili?
     prompt = f"""
     Aşağıdaki haber metnini analiz et ve ülkeler/liderler arasındaki ilişkileri çıkar.
     Sadece şu formatta çıktı ver: "Aktör1,Aktör2"
@@ -139,7 +198,7 @@ def draw_network_graph(text_data):
     Putin,Biden
     
     METİN:
-    {text_data}
+    {text_data[:4000]}
     """
     
     try:
@@ -150,54 +209,42 @@ def draw_network_graph(text_data):
         )
         relations = completion.choices[0].message.content.split('\n')
     except:
-        relations = ["Türkiye,Dünya"] # Hata olursa varsayılan
+        relations = ["Türkiye,Dünya"] 
 
     G = nx.Graph()
-    
-    # İlişkileri grafiğe ekle
     for line in relations:
         if "," in line:
             parts = line.split(',')
             if len(parts) >= 2:
                 source = parts[0].strip()
                 target = parts[1].strip()
-                # Gereksiz uzun metinleri ele
                 if len(source) < 20 and len(target) < 20:
                     G.add_edge(source, target)
     
     if G.number_of_nodes() == 0: G.add_edge("Türkiye", "Küresel Sistem")
 
-    # Çizim Ayarları
     plt.figure(figsize=(12, 8))
-    pos = nx.spring_layout(G, k=1.5) # Düğümleri biraz daha açtık
-    
-    # Düğümler
+    pos = nx.spring_layout(G, k=1.5) 
     nx.draw_networkx_nodes(G, pos, node_size=2500, node_color='#2c3e50', alpha=0.9)
-    
-    # Kenarlar (Çizgiler)
     nx.draw_networkx_edges(G, pos, width=2, alpha=0.6, edge_color='#bdc3c7')
-    
-    # Yazılar
     nx.draw_networkx_labels(G, pos, font_size=9, font_color='white', font_weight='bold')
-    
     plt.title("GÜNLÜK JEOPOLİTİK ETKİLEŞİM AĞI", fontsize=16, color='#c0392b')
     plt.axis('off')
-    
     filename = "network_map.png"
     plt.savefig(filename, bbox_inches='tight', facecolor='#ecf0f1')
     plt.close()
     return filename
 
 # ==========================================
-# 5. AJANLI SİMÜLASYON (YENİLENMİŞ FORMAT)
+# 5. AJANLI SİMÜLASYON
 # ==========================================
 def run_agent_workflow(current_data, historical_memory):
     
     print("⏳ AJAN 2 (HISTORIAN): Çalışıyor...")
     historian_prompt = f"""
-    Sen Tarihçisin. Bugünün haberleri: {current_data}
-    Geçmiş: {historical_memory}
-    Görevin: Sadece benzerlikleri kısa maddelerle yaz.
+    Sen Tarihçisin. Bugünün haberleri: {current_data[:5000]}
+    Geçmiş (Arşivden Bulunanlar): {historical_memory}
+    Görevin: Geçmişteki benzer olaylarla bugünü kıyasla. Trendleri yaz.
     """
     history_analysis = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -206,7 +253,7 @@ def run_agent_workflow(current_data, historical_memory):
 
     print("⚖️ AJAN 3 (THE CRITIC): Çalışıyor...")
     critic_prompt = f"""
-    Sen 'Kızıl Takım' liderisin. Veriler: {current_data}
+    Sen 'Kızıl Takım' liderisin. Veriler: {current_data[:5000]}
     Batı ve Doğu medyası arasındaki farkları sertçe eleştir.
     """
     critic_analysis = client.chat.completions.create(
@@ -216,7 +263,6 @@ def run_agent_workflow(current_data, historical_memory):
 
     print("✍️ AJAN 4 (CHIEF EDITOR): Nihai rapor yazılıyor...")
     
-    # --- YENİLENMİŞ RAPOR FORMATI ---
     final_system_prompt = """Sen Savaş Odası Başkanısın. NİHAİ STRATEJİK RAPORU yaz.
     
     KURALLAR:
@@ -225,26 +271,16 @@ def run_agent_workflow(current_data, historical_memory):
     
     BÖLÜMLER:
     1. 🔥 JEOPOLİTİK RİSK VE TEHDİTLER (Eski Realist Kanat)
-       - Askeri hareketlilik, çatışmalar, sert güç kullanımı.
-    
     2. 🤝 DİPLOMASİ VE EKONOMİK FIRSATLAR (Eski Liberal Kanat)
-       - Anlaşmalar, barış görüşmeleri, ticaret yolları.
-       
     3. 👁️ İSTİHBARAT SAVAŞLARI (Propaganda Analizi)
-       - Batı neyi saklıyor? Doğu neyi abartıyor?
-       
-    4. 📜 TARİHSEL HAFIZA
-       - Bu olay geçmişte neye benziyor?
-       
-    5. 🇹🇷 ANKARA İÇİN STRATEJİK TAVSİYE (Eski Başkanın Kararı)
-       - Türkiye bu durumda ne yapmalı? Somut öneri ver.
-       
+    4. 📜 TARİHSEL HAFIZA (Arşiv Analizi)
+    5. 🇹🇷 ANKARA İÇİN STRATEJİK TAVSİYE
     6. 🎲 GELECEK SENARYOLARI (% Olasılıklar)
     """
     
     final_user_prompt = f"""
-    HAM VERİLER VE LİNKLER: 
-    {current_data}
+    HAM VERİLER (TAM METİN İÇERİR): 
+    {current_data[:7000]}
     
     TARİHÇİ VE DENETÇİ NOTLARI: 
     {history_analysis}
@@ -350,8 +386,12 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
         print(f"❌ Hata: {e}")
 
 if __name__ == "__main__":
-    raw_data, raw_links = fetch_news()
-    memory = read_historical_memory()
+    # 1. Haberleri Çek (Tam Metin Scraping ile) ve Anahtar Kelimeleri Al
+    raw_data, raw_links, current_keywords = fetch_news()
+    
+    # 2. Akıllı Hafızayı Çalıştır (Bugünün kelimelerine göre arşiv tara)
+    memory = read_historical_memory(current_keywords)
+    
     if len(raw_data) > 20:
         report = run_agent_workflow(raw_data, memory)
         graph_map = draw_network_graph(raw_data)
