@@ -36,4 +36,6 @@ jobs:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           ALICI_MAIL: ${{ secrets.ALICI_MAIL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}  # <--- KRİTİK EKLEME
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}  # <--- KRİTİK EKLEME
         run: python main.py
