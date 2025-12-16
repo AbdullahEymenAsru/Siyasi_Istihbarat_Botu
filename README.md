@@ -44,11 +44,15 @@ NOT: !!!Sistemi başlatmadan önce .streamlit/secrets.toml dosyasını oluşturd
 🔐 Güvenlik ve Anahtarlar (Secrets)
 Sistemin tam kapasite çalışması için aşağıdaki anahtarların GitHub Secrets ve Streamlit Secrets bölümlerine tanımlanması ZORUNLUDUR:
 
-Anahtar | Açıklama
+Anahtar                      Açıklama
 GROQ_API_KEY => Llama 3.3 modelini çalıştıran yapay zeka motoru.
+
 SUPABASE_URL => Veritabanı bağlantı adresi.
+
 SUPABASE_KEY => Veritabanı erişim anahtarı.
+
 GMAIL_USER => Raporların gönderileceği Gmail adresi.
+
 GMAIL_PASSWORD => Google Uygulama Şifresi.
 
 ---
