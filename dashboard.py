@@ -6,105 +6,112 @@ from groq import Groq
 # 1. AYARLAR VE SAYFA DÜZENİ
 st.set_page_config(page_title="Savaş Odası Dashboard", page_icon="🛡️", layout="wide")
 
-# API Anahtarı (Streamlit Secrets'tan alacak)
+# API Anahtarı
 try:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except:
     st.error("Lütfen Streamlit Secrets ayarlarından GROQ_API_KEY ekleyin.")
     st.stop()
 
-# 2. YAN MENÜ: RAPOR SEÇİMİ
-st.sidebar.title("🗄️ İSTİHBARAT ARŞİVİ")
+# 2. VERİ YÜKLEME (TÜM ARŞİVİ OKU)
 arsiv_yolu = "ARSIV"
-
-# Arşiv klasörü yoksa oluştur (Hata vermemesi için)
 if not os.path.exists(arsiv_yolu):
-    try:
-        os.makedirs(arsiv_yolu)
-    except:
-        pass # Streamlit Cloud bazen yazma izni vermez, sorun değil
+    try: os.makedirs(arsiv_yolu)
+    except: pass
 
-# Dosyaları bul ve sırala (En yeniden eskiye)
+# Dosyaları bul
 try:
     dosyalar = glob.glob(f"{arsiv_yolu}/*.md")
-    dosyalar.sort(key=os.path.getmtime, reverse=True)
+    dosyalar.sort(key=os.path.getmtime, reverse=True) # En yeniden eskiye
     dosya_isimleri = [os.path.basename(f) for f in dosyalar]
 except:
     dosya_isimleri = []
 
-if not dosya_isimleri:
-    st.warning("Henüz hiç rapor oluşturulmamış veya arşiv boş.")
-    # Demo amaçlı boş bir içerik gösterelim ki kod patlamasın
-    secilen_dosya = "Demo"
-    rapor_icerigi = "<h3>Henüz rapor yok.</h3>"
+# --- KRİTİK BÖLÜM: TÜM GEÇMİŞİ BİRLEŞTİRME ---
+# Yapay zekaya sadece bugünü değil, tüm arşivi veriyoruz.
+tum_arsiv_metni = ""
+if dosyalar:
+    # Token limitini aşmamak için son 10 raporu birleştirelim (Yeterince büyük bir hafıza)
+    for dosya in dosyalar[:10]: 
+        with open(dosya, "r", encoding="utf-8") as f:
+            tarih = os.path.basename(dosya).replace("WarRoom_", "").replace(".md", "")
+            tum_arsiv_metni += f"\n\n=== RAPOR TARİHİ: {tarih} ===\n" + f.read()
 else:
-    secilen_dosya = st.sidebar.radio("Rapor Tarihi Seçin:", dosya_isimleri)
-    # Seçilen dosyanın içeriğini oku
-    secilen_yol = os.path.join(arsiv_yolu, secilen_dosya)
-    with open(secilen_yol, "r", encoding="utf-8") as f:
-        rapor_icerigi = f.read()
+    tum_arsiv_metni = "Henüz arşivde rapor yok."
 
-# 3. ANA EKRAN: RAPOR GÖRÜNTÜLEME
+# 3. YAN MENÜ (GÖRSEL SEÇİM)
+st.sidebar.title("🗄️ RAPOR GÖRÜNTÜLE")
+if not dosya_isimleri:
+    st.sidebar.warning("Arşiv boş.")
+    secilen_dosya_icerigi = "<h3>Veri yok.</h3>"
+else:
+    secilen_dosya = st.sidebar.radio("Okumak istediğiniz rapor:", dosya_isimleri)
+    with open(os.path.join(arsiv_yolu, secilen_dosya), "r", encoding="utf-8") as f:
+        secilen_dosya_icerigi = f.read()
+
+# 4. ANA EKRAN DÜZENİ
 st.title("🛡️ KÜRESEL SAVAŞ ODASI")
 st.markdown("---")
 
-# İki sütunlu yapı: Sol (Rapor), Sağ (Chat)
-col1, col2 = st.columns([1.2, 1])
+col1, col2 = st.columns([1, 1])
 
+# SOL KOLON: Sadece Seçilen Raporu Gösterir (Okuma Amaçlı)
 with col1:
-    st.subheader(f"📄 Rapor: {secilen_dosya}")
-    st.markdown(rapor_icerigi, unsafe_allow_html=True)
+    st.subheader(f"📄 Görüntülenen Rapor")
+    st.markdown(secilen_dosya_icerigi, unsafe_allow_html=True)
 
-# 4. CHAT ARAYÜZÜ (RAG - Retrieval Augmented Generation)
+# SAĞ KOLON: TÜM ARŞİVLE KONUŞAN CHAT (Analiz Amaçlı)
 with col2:
-    st.subheader("💬 İstihbarat Subayı ile Konuş")
-    st.info("Bu rapor hakkında detaylı soru sorabilirsiniz. Örn: 'Bu durum Türkiye'yi nasıl etkiler?'")
+    st.subheader("🧠 Baş Stratejist ile Konuş")
+    st.info("Yapay Zeka, sol taraftaki rapor dahil **TÜM ARŞİV GEÇMİŞİNİ** bilir. Genel trendleri sorabilirsiniz.")
 
-    # Sohbet geçmişini tut
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Geçmiş mesajları göster
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Kullanıcıdan soru al
-    if prompt := st.chat_input("Sorunuzu yazın..."):
-        # Kullanıcı mesajını ekle
+    if prompt := st.chat_input("Tüm istihbaratı analiz et..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # AI Yanıtı Hazırla
         with st.chat_message("assistant"):
             try:
-                # 1. Groq'a İsteği Gönder (Stream Modunda)
+                # SİSTEM MESAJINI GÜNCELLEDİK: "Tüm Arşiv" vurgusu
                 stream = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=[
                         {
                             "role": "system",
-                            "content": f"Sen Savaş Odası'nın kıdemli analistisin. Kullanıcı sana şu rapor hakkında sorular soracak:\n\nRAPOR İÇERİĞİ:\n{rapor_icerigi}\n\nKullanıcının sorusuna bu rapora dayanarak stratejik, net ve Türkçe cevaplar ver."
+                            "content": f"""Sen Savaş Odası'nın Baş Stratejistisin.
+                            
+                            ELİNDEKİ VERİLER:
+                            Aşağıda sana geçmişten bugüne kadar birikmiş TÜM İSTİHBARAT RAPORLARI verilmiştir.
+                            
+                            GÖREVİN:
+                            Kullanıcının sorularını cevaplarken tek bir güne takılı kalma. 
+                            Olaylar arasındaki bağlantıları kur, geçmiş raporlardaki trendleri analiz et ve büyük resmi gör.
+                            
+                            TÜM İSTİHBARAT ARŞİVİ:
+                            {tum_arsiv_metni[:60000]}  # Karakter limiti (Context Window)
+                            """
                         },
                         *st.session_state.messages
                     ],
                     stream=True,
                 )
 
-                # 2. ÖZEL SÜZGEÇ FONKSİYONU (SORUNU ÇÖZEN KISIM) 🛠️
-                # Gelen ham JSON verisini ayıklar ve sadece metni verir
+                # Temizleme Filtresi (Kodları gizler, metni gösterir)
                 def stream_data_generator():
                     for chunk in stream:
                         content = chunk.choices[0].delta.content
                         if content:
                             yield content
 
-                # 3. Ekrana Yazdır (Streamlit'e temizlenmiş veriyi veriyoruz)
                 response = st.write_stream(stream_data_generator())
-                
-                # 4. Cevabı hafızaya kaydet
                 st.session_state.messages.append({"role": "assistant", "content": response})
 
             except Exception as e:
-                st.error(f"Bir hata oluştu: {e}")
+                st.error(f"Hata: {e}")
