@@ -126,6 +126,7 @@ def fetch_news():
     top_news = all_news[:12] 
     
     buffer = ""
+    raw_links_html = "" # Linkleri burada biriktireceğiz
     current_keywords = []
 
     print(f"🕷️  AJAN 1: Seçilen {len(top_news)} GÜNCEL haber işleniyor...")
@@ -134,11 +135,14 @@ def fetch_news():
         full_text = get_full_text(news['link']) if i < 5 else None
         content_to_use = full_text if full_text else news['summary']
         
-        # Linkleri AI'a veriyoruz ki kendisi yerleştirsin
         buffer += f"--- HABER ID: {i+1} ---\nKAYNAK: {news['source']}\nURL: {news['link']}\nBAŞLIK: {news['title']}\nİÇERİK: {content_to_use[:1500]}\n\n"
+        
+        # Link listesini Python tarafında oluşturuyoruz (GARANTİ OLSUN DİYE)
+        raw_links_html += f"<li><a href='{news['link']}' style='color:#2980b9;'>{news['title']}</a> - {news['source']}</li>"
+        
         current_keywords.extend(news['title'].lower().split())
     
-    return buffer, current_keywords
+    return buffer, raw_links_html, current_keywords
 
 # ==========================================
 # 3. HAFIZA
@@ -188,8 +192,8 @@ def draw_network_graph(text_data):
 # ==========================================
 # 5. AJANLI SİMÜLASYON (GELİŞMİŞ AKADEMİK MOD)
 # ==========================================
-def run_agent_workflow(current_data, historical_memory):
-    print("⏳ AJAN 2 (Tarihçi) ve AJAN 3 (Teorisyen) çalışıyor...")
+def run_agent_workflow(current_data, historical_memory, raw_links_html):
+    print("⏳ AJAN 2 ve 3 çalışıyor...")
     critic_report = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": f"""
@@ -200,68 +204,75 @@ def run_agent_workflow(current_data, historical_memory):
 
     print("✍️ AJAN 4 (BAŞ STRATEJİST): Rapor yazılıyor...")
     
-    # --- YENİLENMİŞ PROMPT: ANALİZ, LİNKLER VE AKADEMİK REFERANS ---
-    final_system_prompt = """Sen Savaş Odası'nın Baş Stratejistisin. Hedef kitlen Siyaset Bilimi öğrencileri ve akademisyenler.
+    final_system_prompt = """Sen Savaş Odası'nın Baş Stratejistisin. Hedef kitlen Siyaset Bilimi öğrencileri.
     
     GÖREVLERİN:
-    1. ANALİZ: En kritik 3 olayı 'Derin Analiz' ile incele (Teori + Pratik + Gelecek).
-    2. UFUK TURU: Kalan haberleri SADECE listeleme. Her biri için 1 cümlelik 'Stratejik Önem' analizi yap.
-    3. LİNKLEME: Her haberin veya analizin yanına mutlaka TIKLANABİLİR KAYNAK LİNKİ koy. Format: (<a href='URL'>Kaynak</a>)
-    4. REFERANS: Analiz yaparken kullandığın teorileri (Realizm, Liberalizm vb.) en alta 'Akademik Referanslar' başlığıyla ekle.
+    1. DERİN ANALİZ: En kritik 3 olayı Teori + Pratik + Gelecek olarak incele.
+    2. UFUK TURU: Kalan haberleri listele ve 'Stratejik Önem' analizi yap.
+    3. AKADEMİK REFERANS: Teoriler için (Realizm vb.) akademik künye (DOI) ver.
+    4. LİNKLEME: Haberlerin yanına (<a href='URL' style='color:#2980b9;'>Kaynak</a>) ekle.
     
-    RAPOR ŞABLONU (HTML KULLAN - Streamlit için renkleri zorla):
-    <div style="background-color:#f4f6f7; color:#333333 !important; padding:15px; border-left:5px solid #c0392b; margin-bottom:20px;">
-        <h2 style="color:#c0392b; margin-top:0;">⚡ GÜNÜN STRATEJİK ÖZETİ</h2>
-        <p style="color:#333333 !important;"><i>(Büyük resmi gören, vizyoner bir giriş paragrafı.)</i></p>
-    </div>
+    RAPOR ŞABLONU (HTML KULLAN - SİYAH METİN ZORUNLU):
+    <div style="background-color:#ffffff; color:#333333 !important; padding:15px; border-radius:10px; border:1px solid #ddd;">
+        
+        <div style="background-color:#f4f6f7; color:#333333 !important; padding:15px; border-left:5px solid #c0392b; margin-bottom:20px;">
+            <h2 style="color:#c0392b; margin-top:0;">⚡ GÜNÜN STRATEJİK ÖZETİ</h2>
+            <p style="color:#333333 !important;"><i>(Giriş paragrafı)</i></p>
+        </div>
 
-    <h3 style="color:#2c3e50;">1. 🔭 DERİN ANALİZ: TEORİ VE PRATİK</h3>
-    <p style="color:#333333;"><b>Olay 1:</b> (Başlık) (<a href='URL'>Kaynak</a>)</p>
-    <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Örn: "Mearsheimer'ın Ofansif Realizmine göre...")</p>
-    <p style="color:#333333;"><b>Gelecek Projeksiyonu:</b> (Bu olay nereye evrilir?)</p>
-    <br>
-    <h3 style="color:#2980b9;">2. 🌐 KÜRESEL UFUK TURU (Analitik Özetler)</h3>
-    <ul style="color:#333333;">
-        <li>
-            <b>(Ülke/Konu):</b> Olayın özeti. 
-            <i>Stratejik Önem:</i> (Neden önemli? 1 cümle analiz). 
-            (<a href='URL'>Kaynak</a>)
-        </li>
+        <h3 style="color:#2c3e50;">1. 🔭 DERİN ANALİZ: TEORİ VE PRATİK</h3>
+        <p style="color:#333333;"><b>Olay 1:</b> (Başlık) (<a href='URL' style='color:#2980b9;'>Kaynak</a>)</p>
+        <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Analiz)</p>
+        <p style="color:#333333;"><b>Gelecek Projeksiyonu:</b> (Tahmin)</p>
+        <br>
+        <h3 style="color:#2980b9;">2. 🌐 KÜRESEL UFUK TURU (Analitik Özetler)</h3>
+        <ul style="color:#333333;">
+            <li style="margin-bottom: 8px;">
+                <b>(Konu):</b> Özet. <i>Stratejik Önem:</i> Analiz. (<a href='URL' style='color:#2980b9;'>Kaynak</a>)
+            </li>
         </ul>
 
-    <h3 style="color:#d35400;">3. 👁️ KIZIL TAKIM NOTLARI (Propaganda Analizi)</h3>
-    <div style="font-size:14px; font-style:italic; color:#555555 !important;">{critic_report_placeholder}</div>
+        <h3 style="color:#d35400;">3. 👁️ KIZIL TAKIM NOTLARI</h3>
+        <div style="font-size:14px; font-style:italic; color:#555555 !important;">{critic_report_placeholder}</div>
 
-    <div style="background-color:#e8f8f5; color:#333333 !important; padding:15px; border-radius:5px; margin-top:20px; border:1px solid #1abc9c;">
-        <h4 style="color:#16a085; margin-top:0;">🇹🇷 ANKARA İÇİN POLİTİKA ÖNERİSİ</h4>
-        <p style="color:#333333 !important;">(Realist bir perspektifle Türkiye'ye somut tavsiye ver.)</p>
-    </div>
-    
-    <br>
-    <div style="background-color:#fffcf5; border:1px solid #ddd; padding:15px; margin-top:20px; color:#333333 !important;">
-        <h4 style="color:#856404; margin-top:0;">📚 KULLANILAN AKADEMİK REFERANSLAR</h4>
-        <ul style="font-size:12px; color:#555;">
-            <li>(Analizinde kullandığın teorilere ait kitap/makale künyelerini buraya ekle. Örn: Waltz, Kenneth N. Theory of International Politics.)</li>
-        </ul>
+        <div style="background-color:#e8f8f5; color:#333333 !important; padding:15px; border-radius:5px; margin-top:20px; border:1px solid #1abc9c;">
+            <h4 style="color:#16a085; margin-top:0;">🇹🇷 ANKARA İÇİN POLİTİKA ÖNERİSİ</h4>
+            <p style="color:#333333 !important;">(Tavsiye)</p>
+        </div>
+        
+        <br><hr>
+        
+        <div style="background-color:#fffcf5; border:1px solid #ddd; padding:15px; margin-top:20px; color:#333333 !important;">
+            <h4 style="color:#856404; margin-top:0;">📚 KULLANILAN AKADEMİK REFERANSLAR (DOI)</h4>
+            <ul style="font-size:12px; color:#555;">
+                <li>(Örn: Waltz, Kenneth N. Theory of International Politics. 1979.)</li>
+            </ul>
+        </div>
+        
+        <div style="margin-top:20px; background-color:#f9f9f9; padding:10px; border-radius:5px;">
+            <h4 style="color:#333; margin-top:0;">🔗 DOĞRULANMIŞ HABER KAYNAKÇASI</h4>
+            <ul style="font-size:12px; color:#333 !important;">
+               {raw_links_placeholder}
+            </ul>
+        </div>
     </div>
     """
     
     final_user_prompt = f"""
-    HAM VERİLER (URL'ler dahil): 
-    {current_data[:15000]}
-    
+    HAM VERİLER: {current_data[:15000]}
     TARİHSEL BAĞLAM: {historical_memory}
     ELEŞTİREL ANALİZ: {critic_report}
     
-    Yukarıdaki şablona tam uyarak raporu yaz. 
-    Her haberin yanına URL'sini <a href='...'></a> şeklinde gömmeyi UNUTMA.
-    Şablondaki {{critic_report_placeholder}} yerine eleştirel analizi özetleyerek koy.
+    Şablona uyarak raporu yaz. Metinleri SİYAH (#333333) yap.
+    Şablondaki {{critic_report_placeholder}} yerine eleştirel analizi koy.
+    Şablondaki {{raw_links_placeholder}} yerine AŞAĞIDAKİ LİSTEYİ HİÇ BOZMADAN koy:
+    {raw_links_html}
     """
     
     final_report = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": final_system_prompt.replace("{critic_report_placeholder}", "Aşağıda detaylandırılmıştır.")},
+            {"role": "system", "content": final_system_prompt.replace("{critic_report_placeholder}", "Detaylar aşağıdadır.").replace("{raw_links_placeholder}", "Linkler aşağıdadır.")},
             {"role": "user", "content": final_user_prompt}
         ],
         temperature=0.3
@@ -290,7 +301,6 @@ def archive(report_body):
     date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
     path = f"ARSIV/Analiz_{date_str}.md"
     if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
-    # AI artık kaynakçayı içine gömüyor, o yüzden direkt kaydediyoruz
     with open(path, "w", encoding="utf-8") as f: f.write(report_body)
     try:
         subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"])
@@ -302,7 +312,7 @@ def archive(report_body):
 
 def send_email_to_council(report_body, audio_file, image_file):
     if not ALICI_LISTESI:
-        print("❌ HATA: Gönderilecek mail adresi bulunamadı!")
+        print("❌ HATA: Liste boş!")
         return
 
     print(f"📧 Gönderiliyor: {len(ALICI_LISTESI)} kişi")
@@ -321,7 +331,7 @@ def send_email_to_council(report_body, audio_file, image_file):
             msg_alternative = MIMEMultipart('alternative')
             msg.attach(msg_alternative)
 
-            # --- GÜNCELLENMİŞ MAİL TASARIMI (Buton Tepede) ---
+            # --- HTML (BUTON TEPEDE + MOBİL UYUMLU + SİYAH METİN) ---
             html_content = f"""
             <html><body style='font-family: "Georgia", serif; color:#222; line-height: 1.6; background-color: #f9f9f9; padding: 20px;'>
                 <div style="max-width: 800px; margin: auto; background: white; padding: 40px; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.05); border-top: 5px solid #c0392b;">
@@ -336,6 +346,7 @@ def send_email_to_council(report_body, audio_file, image_file):
                            🚀 CANLI İSTİHBARAT MASASINA BAĞLAN
                         </a>
                     </div>
+
                     <div style="text-align:center; margin-bottom:20px;">
                          <img src="cid:network_map" style="width:100%; max-width:700px; border: 1px solid #ddd; padding: 5px;">
                          <p style="font-size:12px; color:#999;">Günlük İlişki Ağı</p>
@@ -373,16 +384,14 @@ def send_email_to_council(report_body, audio_file, image_file):
         print(f"❌ Mail Hatası: {e}")
 
 if __name__ == "__main__":
-    # raw_links değişkenini kaldırdık çünkü linkler artık AI metninin içinde gömülü
-    raw_data, current_keywords = fetch_news() 
+    raw_data, raw_links_html, current_keywords = fetch_news() 
     memory = read_historical_memory(current_keywords)
     if len(raw_data) > 50: 
-        report = run_agent_workflow(raw_data, memory)
+        # Linkleri AI'a veriyoruz ki içine gömsün
+        report = run_agent_workflow(raw_data, memory, raw_links_html)
         graph_map = draw_network_graph(raw_data)
         
-        # Raporun tamamını (Kaynakça dahil) arşivliyoruz
         archive(report)
-        
         audio = create_audio(report)
         send_email_to_council(report, audio, graph_map)
     else:
