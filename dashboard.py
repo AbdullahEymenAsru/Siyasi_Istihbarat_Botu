@@ -104,7 +104,6 @@ def giris_yap(email, password):
 
 def kayit_ol(email, password):
     try:
-        # DÜZELTME: Kayıt olurken de site adresini zorluyoruz
         res = supabase.auth.sign_up({
             "email": email, 
             "password": password,
@@ -119,10 +118,9 @@ def kayit_ol(email, password):
 
 def sifre_sifirla(email):
     try:
-        # DÜZELTME: Redirect URL'i buradan alıyoruz
         supabase.auth.reset_password_email(email, options={"redirect_to": SITE_URL})
         st.success(f"📧 Sıfırlama bağlantısı {email} adresine gönderildi.")
-        st.warning("⚠️ DİKKAT: Şifrenizi değiştirdiğinizde, eski şifrenizle kilitlenmiş olan sohbet geçmişiniz OKUNAMAZ hale gelecektir (Silinecektir).")
+        st.warning("⚠️ DİKKAT: Şifrenizi değiştirdiğinizde, eski sohbet geçmişiniz OKUNAMAZ hale gelecektir.")
     except Exception as e:
         st.error(f"Mail gönderme hatası: {e}")
 
@@ -262,6 +260,35 @@ else:
     st.sidebar.info("🔒 E2EE Şifreleme Aktif")
     user_id = st.session_state.user.id
     user_pass = st.session_state.password_cache
+
+    # --- ABONE YÖNETİM PANELİ (Sadece Giriş Yapanlar Görebilir) ---
+    with st.sidebar.expander("👥 Konsey Üyeleri (Mail Listesi)"):
+        # Yeni Üye Ekle
+        yeni_abone = st.text_input("Yeni E-posta Ekle", placeholder="arkadas@mail.com")
+        if st.button("Listeye Ekle"):
+            if yeni_abone:
+                try:
+                    supabase.table("abone_listesi").insert({"email": yeni_abone}).execute()
+                    st.success(f"{yeni_abone} eklendi!")
+                    st.rerun()
+                except Exception as e:
+                    st.error("Bu mail zaten ekli veya hata oluştu.")
+        
+        st.markdown("---")
+        
+        # Üyeleri Listele ve Sil
+        st.write("📋 **Mevcut Liste:**")
+        try:
+            aboneler = supabase.table("abone_listesi").select("*").execute().data
+            for abone in aboneler:
+                col_a, col_b = st.columns([4, 1])
+                col_a.text(abone["email"])
+                if col_b.button("❌", key=abone["id"]):
+                    supabase.table("abone_listesi").delete().eq("id", abone["id"]).execute()
+                    st.rerun()
+        except:
+            st.write("Liste boş.")
+    # -------------------------------------------------------------
 
 if st.sidebar.button("Çıkış Yap"):
     if not st.session_state.is_guest: supabase.auth.sign_out()
