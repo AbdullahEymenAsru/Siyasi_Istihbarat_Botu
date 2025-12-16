@@ -2,10 +2,10 @@ name: Gunluk Istihbarat Botu
 
 on:
   schedule:
-    - cron: '0 5,15 * * *'
-  workflow_dispatch:
+    - cron: '0 5,15 * * *' # Her gün 08:00 ve 18:00 (TSİ)
+  workflow_dispatch: # Manuel tetikleme
 
-# --- YENİ EKLENEN KISIM: YAZMA İZNİ ---
+# --- YAZMA İZNİ (Arşivleme için Şart) ---
 permissions:
   contents: write
 # --------------------------------------
@@ -18,14 +18,17 @@ jobs:
       - name: Depoyu Çek
         uses: actions/checkout@v3
 
-      - name: Python Kur
+      # --- BURASI YENİ HIZLI BÖLÜM (CACHE AKTİF) ---
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.10' # 3.10 daha stabil ve hızlıdır
+          cache: 'pip' # <--- SİHİRLİ SATIR: Kütüphaneleri hafızada tutar
 
-      - name: Kütüphaneleri Yükle
+      - name: Install dependencies
         run: |
           pip install -r requirements.txt
+      # ---------------------------------------------
 
       - name: Ajanı Çalıştır
         env:
