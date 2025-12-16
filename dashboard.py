@@ -101,19 +101,31 @@ def giris_yap(email, password):
         st.error(f"Giriş başarısız: {e}")
         return None
 
+# --- GÜNCELLENMİŞ KAYIT FONKSİYONU (OTOMATİK ABONELİK) ---
 def kayit_ol(email, password):
     try:
+        # 1. Kullanıcıyı sisteme kaydet
         res = supabase.auth.sign_up({
             "email": email, 
             "password": password,
             "options": {"email_redirect_to": SITE_URL} 
         })
+        
+        # 2. Kayıt başarılıysa, mail listesine de ekle
         if res.user:
-            st.success("Kayıt başarılı! Lütfen e-postanızı onaylayın.")
+            try:
+                # Arka planda mail listesine ekle
+                supabase.table("abone_listesi").insert({"email": email}).execute()
+            except:
+                # Zaten listede varsa hata verebilir, kullanıcıya yansıtma
+                pass
+                
+            st.success("Kayıt başarılı! Mail listesine de otomatik eklendiniz. Lütfen e-postanızı onaylayın.")
         return res.user
     except Exception as e:
         st.error(f"Kayıt hatası: {e}")
         return None
+# ---------------------------------------------------------
 
 def sifre_sifirla(email):
     try:
@@ -192,7 +204,7 @@ def harita_analiz(metin):
 if "user" not in st.session_state: st.session_state.user = None
 if "is_guest" not in st.session_state: st.session_state.is_guest = False
 if "password_cache" not in st.session_state: st.session_state.password_cache = None
-# --- HARİTA VERİSİNİ SAKLAMAK İÇİN ---
+# Harita verisini saklamak için (Kapanma sorununu çözer)
 if "harita_data" not in st.session_state: st.session_state.harita_data = None
 
 # GİRİŞ EKRANI
@@ -261,35 +273,7 @@ else:
     user_id = st.session_state.user.id
     user_pass = st.session_state.password_cache
 
-    # --- ABONE YÖNETİM PANELİ (Giriş Yapanlara Özel) ---
-    st.sidebar.markdown("---")
-    with st.sidebar.expander("👥 Konsey Üyeleri (Mail Listesi)"):
-        yeni_abone = st.text_input("Yeni E-posta Ekle", placeholder="arkadas@mail.com")
-        if st.button("Listeye Ekle"):
-            if yeni_abone:
-                try:
-                    supabase.table("abone_listesi").insert({"email": yeni_abone}).execute()
-                    st.success(f"{yeni_abone} eklendi!")
-                    st.rerun()
-                except Exception as e:
-                    st.error("Bu mail zaten ekli veya hata oluştu.")
-        
-        st.markdown("---")
-        st.write("📋 **Mevcut Liste:**")
-        try:
-            aboneler = supabase.table("abone_listesi").select("*").execute().data
-            if aboneler:
-                for abone in aboneler:
-                    c1, c2 = st.columns([4, 1])
-                    c1.text(abone["email"])
-                    if c2.button("❌", key=f"del_{abone['id']}"):
-                        supabase.table("abone_listesi").delete().eq("id", abone["id"]).execute()
-                        st.rerun()
-            else:
-                st.info("Liste boş.")
-        except:
-            st.info("Veriye erişilemedi.")
-    # -------------------------------------------------------------
+# (ESKİ MANUEL LİSTE PANELİ BURADAYDI - ŞİMDİ KALDIRILDI)
 
 if st.sidebar.button("Çıkış Yap"):
     if not st.session_state.is_guest: supabase.auth.sign_out()
@@ -331,10 +315,8 @@ with t1: st.markdown(secilen_icerik, unsafe_allow_html=True)
 with t2:
     if st.button("Haritayı Analiz Et ve Çiz"):
         with st.spinner("Harita çiziliyor..."):
-            # Harita verisini Session State'e kaydediyoruz ki sayfa yenilenince gitmesin
             st.session_state.harita_data = harita_analiz(secilen_icerik)
     
-    # Harita verisi varsa çiz
     if st.session_state.harita_data:
         data = st.session_state.harita_data
         m = folium.Map([39,35], zoom_start=3, tiles="CartoDB dark_matter")
