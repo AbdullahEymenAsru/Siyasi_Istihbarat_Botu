@@ -293,7 +293,7 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
     print(f"📧 Dağıtım Başlıyor: {len(ALICI_LISTESI)} Kişi")
     
     # ⚠️ ÖNEMLİ: STREAMLIT PROJE LINKINI BURAYA YAPIŞTIRIN
-    CANLI_DASHBOARD_LINKI = "https://savas-odasi.streamlit.app" 
+    CANLI_DASHBOARD_LINKI = "https://siyasi-istihbarat-botu.streamlit.app" 
     
     saat = datetime.datetime.now().hour + 3 
     if 5 <= saat < 13:
