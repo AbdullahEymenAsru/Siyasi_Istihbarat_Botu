@@ -179,7 +179,7 @@ def draw_network_graph(text_data):
     return filename
 
 # ==========================================
-# 5. AJANLI SİMÜLASYON (DİL DÜZELTMELİ) 🔥
+# 5. AJANLI SİMÜLASYON (DİL DÜZELTMELİ)
 # ==========================================
 def run_agent_workflow(current_data, historical_memory):
     
@@ -261,13 +261,13 @@ def run_agent_workflow(current_data, historical_memory):
             {"role": "system", "content": final_system_prompt},
             {"role": "user", "content": final_user_prompt}
         ],
-        temperature=0.2 # <-- DÜŞÜRÜLDÜ (Daha az halüsinasyon, daha net dil)
+        temperature=0.2 
     ).choices[0].message.content
     
     return final_report
 
 # ==========================================
-# 6. SES & MAİL
+# 6. SES & MAİL & ARŞİV (DÜZELTİLDİ)
 # ==========================================
 async def generate_voice(text, output_file):
     communicate = edge_tts.Communicate(text, SES_MODELI)
@@ -284,11 +284,16 @@ def create_audio(text_content):
         return filename
     except: return None
 
+# --- DOSYA ÜZERİNE YAZMA SORUNUNU ÇÖZEN FONKSİYON ---
 def archive(report_body):
-    date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    # DÜZELTME: Dosya ismine SAAT ve DAKİKA eklendi (%H-%M)
+    # Artık sabah ve akşam raporları farklı isimlerle kaydedilecek.
+    date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
     path = f"ARSIV/WarRoom_{date_str}.md"
+    
     if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
     with open(path, "w", encoding="utf-8") as f: f.write(report_body)
+    
     try:
         subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"])
         subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
