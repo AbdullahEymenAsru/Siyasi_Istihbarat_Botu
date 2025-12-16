@@ -18,6 +18,11 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 # 1. AYARLAR
 st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️", layout="wide")
 
+# --- BURAYA KENDİ SİTE ADRESİNİ YAZ (ÇOK ÖNEMLİ) ---
+# Streamlit uygulamanın tam adresi neyse buraya yapıştır.
+SITE_URL = "https://siyasi-istihbarat-botu.streamlit.app" 
+# ----------------------------------------------------
+
 # API Anahtarları Kontrolü
 if "GROQ_API_KEY" not in st.secrets or "SUPABASE_URL" not in st.secrets:
     st.error("Lütfen Streamlit Secrets ayarlarından GROQ ve SUPABASE anahtarlarını ekleyin.")
@@ -38,7 +43,6 @@ class YerelEmbedder:
         self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 
     def __call__(self, input):
-        # ChromaDB bu formatı bekler
         return self.model.encode(input).tolist()
     
     def name(self):
@@ -89,155 +93,218 @@ KOORDINATLAR = {
     "Ermenistan": [40.1792, 44.4991], "Armenia": [40.1792, 44.4991]
 }
 
-# --- AUTH FONKSİYONLARI ---
+# --- GÜVENLİK VE VERİTABANI FONKSİYONLARI ---
 def giris_yap(email, password):
     try:
-        return supabase.auth.sign_in_with_password({"email": email, "password": password}).user
-    except: return None
+        res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        return res.user
+    except Exception as e:
+        st.error(f"Giriş başarısız: {e}")
+        return None
 
 def kayit_ol(email, password):
     try:
-        return supabase.auth.sign_up({"email": email, "password": password}).user
-    except Exception as e: st.error(str(e)); return None
+        # DÜZELTME: Kayıt olurken de site adresini zorluyoruz
+        res = supabase.auth.sign_up({
+            "email": email, 
+            "password": password,
+            "options": {"email_redirect_to": SITE_URL} 
+        })
+        if res.user:
+            st.success("Kayıt başarılı! Lütfen e-postanızı onaylayın.")
+        return res.user
+    except Exception as e:
+        st.error(f"Kayıt hatası: {e}")
+        return None
 
 def sifre_sifirla(email):
     try:
-        site_url = "https://siyasi-istihbarat-botu.streamlit.app"
-        supabase.auth.reset_password_email(email, options={"redirect_to": site_url})
-        st.success(f"📧 Sıfırlama gönderildi: {email}")
-        st.warning("⚠️ Şifre değişince eski sohbetler silinir.")
-    except Exception as e: st.error(str(e))
+        # DÜZELTME: Redirect URL'i buradan alıyoruz
+        supabase.auth.reset_password_email(email, options={"redirect_to": SITE_URL})
+        st.success(f"📧 Sıfırlama bağlantısı {email} adresine gönderildi.")
+        st.warning("⚠️ DİKKAT: Şifrenizi değiştirdiğinizde, eski şifrenizle kilitlenmiş olan sohbet geçmişiniz OKUNAMAZ hale gelecektir (Silinecektir).")
+    except Exception as e:
+        st.error(f"Mail gönderme hatası: {e}")
 
 def buluttan_yukle(user_id, password):
     try:
-        res = supabase.table("chat_logs").select("messages").eq("user_id", user_id).execute()
-        if res.data and "encrypted_data" in res.data[0]["messages"]:
-            return sifreyi_coz(res.data[0]["messages"]["encrypted_data"], password)
+        response = supabase.table("chat_logs").select("messages").eq("user_id", user_id).execute()
+        if response.data:
+            raw_data = response.data[0]["messages"]
+            if isinstance(raw_data, dict) and "encrypted_data" in raw_data:
+                return sifreyi_coz(raw_data["encrypted_data"], password)
     except: pass
     return []
 
-def buluta_kaydet(user_id, msgs, password):
+def buluta_kaydet(user_id, messages, password):
     try:
-        enc = sifrele(msgs, password)
-        supabase.table("chat_logs").upsert({"user_id": user_id, "messages": {"encrypted_data": enc}}, on_conflict="user_id").execute()
-    except: pass
+        sifreli_veri = sifrele(messages, password)
+        data = {"user_id": user_id, "messages": {"encrypted_data": sifreli_veri}}
+        supabase.table("chat_logs").upsert(data, on_conflict="user_id").execute()
+    except Exception as e: print(f"Kayıt hatası: {e}")
 
-# --- AI FONKSİYONLARI ---
+# --- AI VE HARİTA FONKSİYONLARI ---
 @st.cache_resource
-def get_chroma_client(): return chromadb.PersistentClient(path="VEKTOR_DB")
+def get_chroma_client():
+    return chromadb.PersistentClient(path="VEKTOR_DB")
 
 @st.cache_resource
-def get_embedding_function(): return YerelEmbedder()
+def get_embedding_function():
+    return YerelEmbedder()
 
 def hafizayi_guncelle():
     chroma = get_chroma_client()
     ef = get_embedding_function()
+    
     col = chroma.get_or_create_collection(name="savas_odasi", embedding_function=ef)
     dosyalar = glob.glob("ARSIV/*.md")
     yeni = False
     for d in dosyalar:
-        if not col.get(ids=[os.path.basename(d)])['ids']:
-            with open(d,"r",encoding="utf-8") as f: col.add(documents=[f.read()], metadatas=[{"source":os.path.basename(d)}], ids=[os.path.basename(d)])
+        adi = os.path.basename(d)
+        if not col.get(ids=[adi])['ids']:
+            with open(d,"r",encoding="utf-8") as f: col.add(documents=[f.read()], metadatas=[{"source":adi}], ids=[adi])
             yeni = True
     return yeni
 
 def hafizadan_getir(soru):
     try:
-        ef = get_embedding_function()
+        ef = get_embedding_function() 
         col = get_chroma_client().get_collection(name="savas_odasi", embedding_function=ef)
         res = col.query(query_texts=[soru], n_results=3)
-        return "\n".join(res['documents'][0]) if res['documents'] else "Veri yok."
-    except: return "Hata."
+        return "\n".join(res['documents'][0]) if res['documents'] else "Arşivde bilgi yok."
+    except: return "Hafıza hatası."
 
 def web_ara(soru):
     try:
         res = DDGS().text(keywords=soru, region='tr-tr', max_results=5)
-        return "\n".join([f"- {r['title']}: {r['body']}" for r in res]) if res else "Sonuç yok."
+        return "\n".join([f"- {r['title']}: {r['body']}" for r in res]) if res else "İnternette sonuç yok."
     except: return "Bağlantı hatası."
 
 def harita_analiz(metin):
-    prompt = f"JSON formatında coğrafi ilişkiler: {{'data': [{{'kaynak_ulke':'Rusya','hedef_ulke':'Ukrayna','olay':'Saldırı','risk_puani':80}}]}} Metin: {metin[:3000]}"
+    prompt = f"JSON formatında coğrafi ilişkiler çıkar: {{'data': [{{'kaynak_ulke':'Rusya','hedef_ulke':'Ukrayna','olay':'Saldırı','risk_puani':80}}]}} Metin: {metin[:3000]}"
     try:
         res = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content":prompt}], response_format={"type":"json_object"})
         return json.loads(res.choices[0].message.content)
     except: return {"data":[]}
 
-# ================= MAIN =================
+# ==========================================
+# UYGULAMA AKIŞI (MAIN)
+# ==========================================
+
+# 1. OTURUM KONTROLÜ
 if "user" not in st.session_state: st.session_state.user = None
 if "is_guest" not in st.session_state: st.session_state.is_guest = False
 if "password_cache" not in st.session_state: st.session_state.password_cache = None
-# --- HARİTA İÇİN STATE ---
 if "harita_data" not in st.session_state: st.session_state.harita_data = None
 
 # GİRİŞ EKRANI
 if not st.session_state.user and not st.session_state.is_guest:
-    st.title("🔐 SAVAŞ ODASI: GİRİŞ")
+    st.title("🔐 SAVAŞ ODASI: GİRİŞ EKRANI")
+    st.markdown("Verileriniz uçtan uca şifrelidir (E2EE). Misafir girişlerinde veri kaydedilmez.")
+    
+    # URL'den gelen Token Kontrolü (Şifre Sıfırlama Dönüşü)
+    query_params = st.query_params
+    if "type" in query_params and query_params["type"] == "recovery":
+        st.info("🔄 Şifre Sıfırlama Modu")
+        new_pass = st.text_input("Yeni Şifrenizi Belirleyin", type="password")
+        if st.button("Şifreyi Güncelle"):
+            try:
+                supabase.auth.update_user({"password": new_pass})
+                st.success("Şifre güncellendi! Lütfen yeni şifrenizle soldan giriş yapın.")
+            except Exception as e: st.error(f"Hata: {e}")
+
     col1, col2 = st.columns(2)
+    
     with col1:
-        st.subheader("Üye Girişi")
+        st.subheader("🔑 Üye Girişi")
         email = st.text_input("E-posta")
         password = st.text_input("Şifre", type="password")
         if st.button("Giriş Yap"):
-            u = giris_yap(email, password)
-            if u:
-                st.session_state.user = u
+            user = giris_yap(email, password)
+            if user:
+                st.session_state.user = user
                 st.session_state.password_cache = password
-                st.session_state.messages = buluttan_yukle(u.id, password)
+                st.session_state.messages = buluttan_yukle(user.id, password)
                 st.rerun()
-        with st.expander("Şifremi Unuttum / Kayıt Ol"):
-            ne = st.text_input("Yeni/Unutulan E-posta")
-            np = st.text_input("Yeni Şifre", type="password")
-            if st.button("Kayıt Ol"): kayit_ol(ne, np)
-            if st.button("Sıfırlama Linki Gönder"): sifre_sifirla(ne)
+                
+        # ŞİFREMİ UNUTTUM
+        with st.expander("❓ Şifremi Unuttum"):
+            st.info("E-posta adresinizi girin, sıfırlama bağlantısı gönderelim.")
+            reset_mail = st.text_input("Kayıtlı E-posta Adresi")
+            if st.button("Sıfırlama Linki Gönder"):
+                if reset_mail:
+                    sifre_sifirla(reset_mail)
+                else:
+                    st.warning("Lütfen e-posta adresini girin.")
+
+        with st.expander("📝 Yeni Hesap Oluştur"):
+            new_email = st.text_input("Yeni E-posta")
+            new_pass = st.text_input("Yeni Şifre", type="password")
+            if st.button("Kayıt Ol"): kayit_ol(new_email, new_pass)
+
     with col2:
-        st.subheader("Misafir")
-        if st.button("Misafir Girişi >>"):
+        st.subheader("🕵️ Misafir Girişi")
+        st.info("Kayıt tutulmaz. Sayfa yenilenince tüm veriler silinir.")
+        if st.button("Misafir Olarak Devam Et >>"):
             st.session_state.is_guest = True
             st.session_state.messages = []
             st.rerun()
-    st.stop()
+            
+    st.stop() 
 
-# --- ANA EKRAN ---
+# --- GİRİŞ YAPILDI ---
+
 if st.session_state.is_guest:
+    st.sidebar.warning("🕵️ MOD: MİSAFİR (Kayıt Yok)")
     user_id = "guest"
-    st.sidebar.warning("🕵️ Misafir Modu")
 else:
-    user_id = st.session_state.user.id
     st.sidebar.success(f"Ajan: {st.session_state.user.email}")
+    st.sidebar.info("🔒 E2EE Şifreleme Aktif")
+    user_id = st.session_state.user.id
+    user_pass = st.session_state.password_cache
 
-if st.sidebar.button("Çıkış"):
+if st.sidebar.button("Çıkış Yap"):
     if not st.session_state.is_guest: supabase.auth.sign_out()
     st.session_state.user = None
     st.session_state.is_guest = False
-    st.session_state.password_cache = None
-    st.rerun()
-
-if st.sidebar.button("Temizle"):
     st.session_state.messages = []
-    if not st.session_state.is_guest: buluta_kaydet(user_id, [], st.session_state.password_cache)
+    st.session_state.password_cache = None
+    st.session_state.harita_data = None
     st.rerun()
 
+st.sidebar.markdown("---")
+
+if st.sidebar.button("🧹 Sohbeti Temizle"):
+    st.session_state.messages = []
+    if not st.session_state.is_guest:
+        buluta_kaydet(user_id, [], user_pass)
+    st.rerun()
+
+# Rapor Seçimi
 try:
-    files = glob.glob("ARSIV/*.md")
-    files.sort(key=os.path.getmtime, reverse=True)
-    sec = st.sidebar.radio("Rapor", [os.path.basename(f) for f in files])
-    with open(f"ARSIV/{sec}","r",encoding="utf-8") as f: txt = f.read()
-except: txt = "Veri yok"
+    dosyalar = glob.glob("ARSIV/*.md")
+    dosyalar.sort(key=os.path.getmtime, reverse=True)
+    files = [os.path.basename(f) for f in dosyalar]
+except: files = []
 
-st.title("☁️ SAVAŞ ODASI")
-with st.spinner("Yükleniyor..."): hafizayi_guncelle()
+secilen_icerik = "Veri yok"
+if files:
+    sec = st.sidebar.radio("🗄️ Rapor Arşivi", files)
+    with open(f"ARSIV/{sec}", "r", encoding="utf-8") as f: secilen_icerik = f.read()
 
-t1, t2, t3 = st.tabs(["📄 Rapor", "🗺️ Harita", "💬 Chat"])
+# ANA EKRAN
+st.title("☁️ KÜRESEL SAVAŞ ODASI")
+with st.spinner("Sistem Hazırlanıyor..."): hafizayi_guncelle()
 
-with t1: st.markdown(txt, unsafe_allow_html=True)
+t1, t2, t3 = st.tabs(["📄 RAPOR", "🗺️ HARİTA", "🧠 HİBRİT CHAT"])
+
+with t1: st.markdown(secilen_icerik, unsafe_allow_html=True)
 
 with t2:
-    # --- HARİTA DÜZELTMESİ ---
     if st.button("Haritayı Analiz Et ve Çiz"):
         with st.spinner("Harita çiziliyor..."):
-            st.session_state.harita_data = harita_analiz(txt)
+            st.session_state.harita_data = harita_analiz(secilen_icerik)
     
-    # Veri varsa haritayı çiz (Sayfa yenilense de kaybolmaz)
     if st.session_state.harita_data:
         data = st.session_state.harita_data
         m = folium.Map([39,35], zoom_start=3, tiles="CartoDB dark_matter")
@@ -251,19 +318,32 @@ with t2:
         st_folium(m, width="100%")
 
 with t3:
-    for m in st.session_state.messages: st.chat_message(m["role"]).markdown(m["content"])
-    if q := st.chat_input("..."):
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]): st.markdown(m["content"])
+    
+    if q := st.chat_input("Emriniz?"):
         st.session_state.messages.append({"role":"user","content":q})
-        st.chat_message("user").markdown(q)
-        if not st.session_state.is_guest: buluta_kaydet(user_id, st.session_state.messages, st.session_state.password_cache)
+        with st.chat_message("user"): st.markdown(q)
+        
+        if not st.session_state.is_guest:
+            buluta_kaydet(user_id, st.session_state.messages, user_pass)
+        
+        with st.status("Analiz yapılıyor...") as s:
+            arsiv = hafizadan_getir(q)
+            web = web_ara(q)
+            s.update(label="Tamamlandı", state="complete")
         
         with st.chat_message("assistant"):
-            s = client.chat.completions.create(
+            stream = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role":"system","content":f"RAG:{hafizadan_getir(q)} WEB:{web_ara(q)} SORU:{q}"}] + st.session_state.messages, stream=True)
+                messages=[{"role":"system","content":f"Sen Stratejistsin. ARŞİV:{arsiv}\nWEB:{web}\nSORU:{q}"}] + st.session_state.messages,
+                stream=True
+            )
             def gen():
-                for c in s: 
+                for c in stream:
                     if c.choices[0].delta.content: yield c.choices[0].delta.content
             res = st.write_stream(gen())
             st.session_state.messages.append({"role":"assistant","content":res})
-            if not st.session_state.is_guest: buluta_kaydet(user_id, st.session_state.messages, st.session_state.password_cache)
+            
+            if not st.session_state.is_guest:
+                buluta_kaydet(user_id, st.session_state.messages, user_pass)
