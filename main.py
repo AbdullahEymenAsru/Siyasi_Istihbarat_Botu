@@ -47,6 +47,9 @@ def get_email_list():
 
 ALICI_LISTESI = get_email_list()
 # ----------------------------------
+# main.py dosyasında "ALICI_LISTESI = get_email_list()" satırının hemen altına ekle:
+
+print(f"📋 KULLANILACAK MAİL LİSTESİ: {ALICI_LISTESI}")
 
 client = Groq(api_key=GROQ_API_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
