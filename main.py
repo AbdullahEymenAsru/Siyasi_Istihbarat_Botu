@@ -126,7 +126,6 @@ def fetch_news():
     top_news = all_news[:12] 
     
     buffer = ""
-    raw_links_html = "<ul>"
     current_keywords = []
 
     print(f"🕷️  AJAN 1: Seçilen {len(top_news)} GÜNCEL haber işleniyor...")
@@ -134,12 +133,12 @@ def fetch_news():
     for i, news in enumerate(top_news):
         full_text = get_full_text(news['link']) if i < 5 else None
         content_to_use = full_text if full_text else news['summary']
-        buffer += f"--- HABER {i+1} ({news['source']}) ---\nBAŞLIK: {news['title']}\nİÇERİK: {content_to_use[:1200]}\nURL: {news['link']}\n\n"
-        raw_links_html += f"<li><b>{news['source']}:</b> <a href='{news['link']}'>{news['title']}</a></li>"
+        
+        # Linkleri AI'a veriyoruz ki kendisi yerleştirsin
+        buffer += f"--- HABER ID: {i+1} ---\nKAYNAK: {news['source']}\nURL: {news['link']}\nBAŞLIK: {news['title']}\nİÇERİK: {content_to_use[:1500]}\n\n"
         current_keywords.extend(news['title'].lower().split())
     
-    raw_links_html += "</ul>"
-    return buffer, raw_links_html, current_keywords
+    return buffer, current_keywords
 
 # ==========================================
 # 3. HAFIZA
@@ -187,7 +186,7 @@ def draw_network_graph(text_data):
     return filename
 
 # ==========================================
-# 5. AJANLI SİMÜLASYON (AKADEMİK MOD)
+# 5. AJANLI SİMÜLASYON (GELİŞMİŞ AKADEMİK MOD)
 # ==========================================
 def run_agent_workflow(current_data, historical_memory):
     print("⏳ AJAN 2 (Tarihçi) ve AJAN 3 (Teorisyen) çalışıyor...")
@@ -201,56 +200,61 @@ def run_agent_workflow(current_data, historical_memory):
 
     print("✍️ AJAN 4 (BAŞ STRATEJİST): Rapor yazılıyor...")
     
-    # HTML Şablonuna siyah renk zorlaması eklendi (Streamlit uyumu için)
+    # --- YENİLENMİŞ PROMPT: ANALİZ, LİNKLER VE AKADEMİK REFERANS ---
     final_system_prompt = """Sen Savaş Odası'nın Baş Stratejistisin. Hedef kitlen Siyaset Bilimi öğrencileri ve akademisyenler.
     
-    GÖREVİN: Elindeki GÜNCEL haberleri analiz et ve aşağıdaki FORMATTA raporla:
+    GÖREVLERİN:
+    1. ANALİZ: En kritik 3 olayı 'Derin Analiz' ile incele (Teori + Pratik + Gelecek).
+    2. UFUK TURU: Kalan haberleri SADECE listeleme. Her biri için 1 cümlelik 'Stratejik Önem' analizi yap.
+    3. LİNKLEME: Her haberin veya analizin yanına mutlaka TIKLANABİLİR KAYNAK LİNKİ koy. Format: (<a href='URL'>Kaynak</a>)
+    4. REFERANS: Analiz yaparken kullandığın teorileri (Realizm, Liberalizm vb.) en alta 'Akademik Referanslar' başlığıyla ekle.
     
-    1. DERİNLİK (İlk Bölüm): En kritik 3 GÜNCEL olayı seç. Bunları Uluslararası İlişkiler Teorileri (Realizm, Liberalizm, Konstrüktivizm, Güvenlik İkilemi vb.) ile akademik dilde analiz et. "So What?" (Bu neden önemli?) sorusuna cevap ver.
-    2. GENİŞLİK (İkinci Bölüm): Kalan haberleri "Küresel Ufuk Turu" başlığı altında, kısa ve net maddeler halinde listele.
-    3. DİL: %100 Resmi, Akademik ve Akıcı İstanbul Türkçesi.
-    
-    RAPOR ŞABLONU (HTML KULLAN):
+    RAPOR ŞABLONU (HTML KULLAN - Streamlit için renkleri zorla):
     <div style="background-color:#f4f6f7; color:#333333 !important; padding:15px; border-left:5px solid #c0392b; margin-bottom:20px;">
         <h2 style="color:#c0392b; margin-top:0;">⚡ GÜNÜN STRATEJİK ÖZETİ</h2>
-        <p style="color:#333333 !important;"><i>(Buraya tüm olayları sentezleyen, vizyoner bir giriş paragrafı yaz.)</i></p>
+        <p style="color:#333333 !important;"><i>(Büyük resmi gören, vizyoner bir giriş paragrafı.)</i></p>
     </div>
 
     <h3 style="color:#2c3e50;">1. 🔭 DERİN ANALİZ: TEORİ VE PRATİK</h3>
-    <p style="color:#333333;"><b>Olay 1:</b> (Başlık)</p>
-    <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Örn: "Bu hamle, Mearsheimer'ın Ofansif Realizm teorisi bağlamında...")</p>
+    <p style="color:#333333;"><b>Olay 1:</b> (Başlık) (<a href='URL'>Kaynak</a>)</p>
+    <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Örn: "Mearsheimer'ın Ofansif Realizmine göre...")</p>
     <p style="color:#333333;"><b>Gelecek Projeksiyonu:</b> (Bu olay nereye evrilir?)</p>
     <br>
-    <p style="color:#333333;"><b>Olay 2:</b> (Başlık)</p>
-    <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Akademik analiz...)</p>
-    <br>
-    <p style="color:#333333;"><b>Olay 3:</b> (Başlık)</p>
-    <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Akademik analiz...)</p>
-
-    <h3 style="color:#2980b9;">2. 🌐 KÜRESEL UFUK TURU (Diğer Gelişmeler)</h3>
+    <h3 style="color:#2980b9;">2. 🌐 KÜRESEL UFUK TURU (Analitik Özetler)</h3>
     <ul style="color:#333333;">
-        <li>🌍 (Diğer önemli haber 1) - Kaynak</li>
-        <li>(Kalan haberleri buraya ekle...)</li>
-    </ul>
+        <li>
+            <b>(Ülke/Konu):</b> Olayın özeti. 
+            <i>Stratejik Önem:</i> (Neden önemli? 1 cümle analiz). 
+            (<a href='URL'>Kaynak</a>)
+        </li>
+        </ul>
 
     <h3 style="color:#d35400;">3. 👁️ KIZIL TAKIM NOTLARI (Propaganda Analizi)</h3>
     <div style="font-size:14px; font-style:italic; color:#555555 !important;">{critic_report_placeholder}</div>
 
     <div style="background-color:#e8f8f5; color:#333333 !important; padding:15px; border-radius:5px; margin-top:20px; border:1px solid #1abc9c;">
         <h4 style="color:#16a085; margin-top:0;">🇹🇷 ANKARA İÇİN POLİTİKA ÖNERİSİ</h4>
-        <p style="color:#333333 !important;">(Makyevelist ve Realist bir perspektifle Türkiye'ye somut tavsiye ver.)</p>
+        <p style="color:#333333 !important;">(Realist bir perspektifle Türkiye'ye somut tavsiye ver.)</p>
     </div>
+    
     <br>
-    <div style="background-color:#fff3cd; color:#333333 !important; padding:10px; border-radius:5px;">
-        <b style="color:#856404;">📚 GÜNÜN AKADEMİK KAVRAMI:</b> (Olaylarla ilgili bir IR kavramını açıkla.)
+    <div style="background-color:#fffcf5; border:1px solid #ddd; padding:15px; margin-top:20px; color:#333333 !important;">
+        <h4 style="color:#856404; margin-top:0;">📚 KULLANILAN AKADEMİK REFERANSLAR</h4>
+        <ul style="font-size:12px; color:#555;">
+            <li>(Analizinde kullandığın teorilere ait kitap/makale künyelerini buraya ekle. Örn: Waltz, Kenneth N. Theory of International Politics.)</li>
+        </ul>
     </div>
     """
     
     final_user_prompt = f"""
-    HAM VERİLER: {current_data[:12000]}
+    HAM VERİLER (URL'ler dahil): 
+    {current_data[:15000]}
+    
     TARİHSEL BAĞLAM: {historical_memory}
     ELEŞTİREL ANALİZ: {critic_report}
-    Yukarıdaki verileri şablona uygun olarak işle.
+    
+    Yukarıdaki şablona tam uyarak raporu yaz. 
+    Her haberin yanına URL'sini <a href='...'></a> şeklinde gömmeyi UNUTMA.
     Şablondaki {{critic_report_placeholder}} yerine eleştirel analizi özetleyerek koy.
     """
     
@@ -265,7 +269,7 @@ def run_agent_workflow(current_data, historical_memory):
     return final_report
 
 # ==========================================
-# 6. SES & MAİL & ARŞİV (GÜNCELLENDİ)
+# 6. SES & MAİL & ARŞİV
 # ==========================================
 async def generate_voice(text, output_file):
     communicate = edge_tts.Communicate(text, SES_MODELI)
@@ -282,16 +286,12 @@ def create_audio(text_content):
         return filename
     except: return None
 
-# --- DÜZELTME: raw_links eklendi (Kaynakça) ---
-def archive(report_body, raw_links):
+def archive(report_body):
     date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
     path = f"ARSIV/Analiz_{date_str}.md"
     if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
-    
-    # Rapor ve kaynakçayı birleştir
-    full_content = f"{report_body}\n\n<hr>\n<h3>📚 DOĞRULANMIŞ KAYNAKÇA</h3>\n{raw_links}"
-    
-    with open(path, "w", encoding="utf-8") as f: f.write(full_content)
+    # AI artık kaynakçayı içine gömüyor, o yüzden direkt kaydediyoruz
+    with open(path, "w", encoding="utf-8") as f: f.write(report_body)
     try:
         subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"])
         subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
@@ -300,7 +300,7 @@ def archive(report_body, raw_links):
         subprocess.run(["git", "push"])
     except: pass
 
-def send_email_to_council(report_body, raw_links, audio_file, image_file):
+def send_email_to_council(report_body, audio_file, image_file):
     if not ALICI_LISTESI:
         print("❌ HATA: Gönderilecek mail adresi bulunamadı!")
         return
@@ -321,7 +321,7 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
             msg_alternative = MIMEMultipart('alternative')
             msg.attach(msg_alternative)
 
-            # --- GÜNCELLENMİŞ HTML: BUTON TEPEDE VE BÜYÜK ---
+            # --- GÜNCELLENMİŞ MAİL TASARIMI (Buton Tepede) ---
             html_content = f"""
             <html><body style='font-family: "Georgia", serif; color:#222; line-height: 1.6; background-color: #f9f9f9; padding: 20px;'>
                 <div style="max-width: 800px; margin: auto; background: white; padding: 40px; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.05); border-top: 5px solid #c0392b;">
@@ -343,9 +343,8 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
 
                     <div style="font-size: 16px;">{report_body}</div>
                     
-                    <div style="margin-top: 40px; padding: 20px; background-color: #eef2f3; border-radius: 5px;">
-                        <h4 style="margin-top: 0; color: #2c3e50;">🔗 İLERİ OKUMA & KAYNAKLAR</h4>
-                        <div style="font-size: 13px; color: #555;">{raw_links}</div>
+                    <div style="margin-top: 30px; text-align: center; font-size: 12px; color: #999;">
+                        Bu rapor Yapay Zeka destekli OSINT verileriyle oluşturulmuştur.
                     </div>
                 </div>
             </body></html>
@@ -374,16 +373,17 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
         print(f"❌ Mail Hatası: {e}")
 
 if __name__ == "__main__":
-    raw_data, raw_links, current_keywords = fetch_news()
+    # raw_links değişkenini kaldırdık çünkü linkler artık AI metninin içinde gömülü
+    raw_data, current_keywords = fetch_news() 
     memory = read_historical_memory(current_keywords)
     if len(raw_data) > 50: 
         report = run_agent_workflow(raw_data, memory)
         graph_map = draw_network_graph(raw_data)
         
-        # DÜZELTME: Kaynakçayı da arşive gönderiyoruz
-        archive(report, raw_links)
+        # Raporun tamamını (Kaynakça dahil) arşivliyoruz
+        archive(report)
         
         audio = create_audio(report)
-        send_email_to_council(report, raw_links, audio, graph_map)
+        send_email_to_council(report, audio, graph_map)
     else:
         print("Yeterli veri yok, rapor oluşturulmadı.")
