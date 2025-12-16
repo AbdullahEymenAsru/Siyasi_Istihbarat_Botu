@@ -38,13 +38,13 @@ Sistemi yerel makinenizde ayağa kaldırmak için:
 
    streamlit run dashboard.py
 
-NOT: !!!Sistemi başlatmadan önce .streamlit/secrets.toml dosyasını oluşturduğunuzdan ve anahtarlarınızı eklediğinizden emin olun.!!!
 
 ---
 🔐 Güvenlik ve Anahtarlar (Secrets)
 Sistemin tam kapasite çalışması için aşağıdaki anahtarların GitHub Secrets ve Streamlit Secrets bölümlerine tanımlanması ZORUNLUDUR:
 
-Anahtar                      Açıklama
+Anahtar          |            Açıklama
+
 GROQ_API_KEY => Llama 3.3 modelini çalıştıran yapay zeka motoru.
 
 SUPABASE_URL => Veritabanı bağlantı adresi.
@@ -54,6 +54,17 @@ SUPABASE_KEY => Veritabanı erişim anahtarı.
 GMAIL_USER => Raporların gönderileceği Gmail adresi.
 
 GMAIL_PASSWORD => Google Uygulama Şifresi.
+
+
+NOT: !!!Sistemi başlatmadan önce .streamlit/secrets.toml dosyasını oluşturduğunuzdan ve anahtarlarınızı eklediğinizden emin olun.!!!
+
+Örnek gösterim:
+
+GROQ_API_KEY = "kendi_anahtarı"
+SUPABASE_URL = "kendi_urlsi"
+SUPABASE_KEY = "kendi_keyi"
+GMAIL_USER = "gönderim_yapılacak_mail"
+GMAIL_PASSWORD = "gmail_api"
 
 ---
 🏗️ Sistem Mimarisi
