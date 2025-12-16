@@ -39,20 +39,30 @@ To deploy the system on your local machine:
    streamlit run dashboard.py
 ---
 Key	|       Description
+
 GROQ_API_KEY => Access key for the Llama 3.3 AI analysis engine.
+
 SUPABASE_URL => Connection URL for the cloud intelligence database.
+
 SUPABASE_KEY => Access key for database read/write operations.
+
 GMAIL_USER => The Gmail address used to dispatch intelligence reports.
+
 GMAIL_PASSWORD => 16-digit Google App Password (not your standard password).
+
 
 Note: !!!Ensure you create a .streamlit/secrets.toml file for local execution and populate it with your keys as shown below:!!!
 
 Sample representation:
 
 GROQ_API_KEY = "your_key"
+
 SUPABASE_URL = "your_url"
+
 SUPABASE_KEY = "your_key"
+
 GMAIL_USER = "sender_email"
+
 GMAIL_PASSWORD = "app_password"
 
 ---
