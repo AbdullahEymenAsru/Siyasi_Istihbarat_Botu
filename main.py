@@ -201,6 +201,7 @@ def run_agent_workflow(current_data, historical_memory):
 
     print("✍️ AJAN 4 (BAŞ STRATEJİST): Rapor yazılıyor...")
     
+    # HTML Şablonuna siyah renk zorlaması eklendi (Streamlit uyumu için)
     final_system_prompt = """Sen Savaş Odası'nın Baş Stratejistisin. Hedef kitlen Siyaset Bilimi öğrencileri ve akademisyenler.
     
     GÖREVİN: Elindeki GÜNCEL haberleri analiz et ve aşağıdaki FORMATTA raporla:
@@ -210,37 +211,37 @@ def run_agent_workflow(current_data, historical_memory):
     3. DİL: %100 Resmi, Akademik ve Akıcı İstanbul Türkçesi.
     
     RAPOR ŞABLONU (HTML KULLAN):
-    <div style="background-color:#f4f6f7; padding:15px; border-left:5px solid #c0392b; margin-bottom:20px;">
+    <div style="background-color:#f4f6f7; color:#333333 !important; padding:15px; border-left:5px solid #c0392b; margin-bottom:20px;">
         <h2 style="color:#c0392b; margin-top:0;">⚡ GÜNÜN STRATEJİK ÖZETİ</h2>
-        <p><i>(Buraya tüm olayları sentezleyen, vizyoner bir giriş paragrafı yaz.)</i></p>
+        <p style="color:#333333 !important;"><i>(Buraya tüm olayları sentezleyen, vizyoner bir giriş paragrafı yaz.)</i></p>
     </div>
 
     <h3 style="color:#2c3e50;">1. 🔭 DERİN ANALİZ: TEORİ VE PRATİK</h3>
-    <p><b>Olay 1:</b> (Başlık)</p>
-    <p><b>Teorik Çerçeve:</b> (Örn: "Bu hamle, Mearsheimer'ın Ofansif Realizm teorisi bağlamında...")</p>
-    <p><b>Gelecek Projeksiyonu:</b> (Bu olay nereye evrilir?)</p>
+    <p style="color:#333333;"><b>Olay 1:</b> (Başlık)</p>
+    <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Örn: "Bu hamle, Mearsheimer'ın Ofansif Realizm teorisi bağlamında...")</p>
+    <p style="color:#333333;"><b>Gelecek Projeksiyonu:</b> (Bu olay nereye evrilir?)</p>
     <br>
-    <p><b>Olay 2:</b> (Başlık)</p>
-    <p><b>Teorik Çerçeve:</b> (Akademik analiz...)</p>
+    <p style="color:#333333;"><b>Olay 2:</b> (Başlık)</p>
+    <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Akademik analiz...)</p>
     <br>
-    <p><b>Olay 3:</b> (Başlık)</p>
-    <p><b>Teorik Çerçeve:</b> (Akademik analiz...)</p>
+    <p style="color:#333333;"><b>Olay 3:</b> (Başlık)</p>
+    <p style="color:#333333;"><b>Teorik Çerçeve:</b> (Akademik analiz...)</p>
 
     <h3 style="color:#2980b9;">2. 🌐 KÜRESEL UFUK TURU (Diğer Gelişmeler)</h3>
-    <ul>
+    <ul style="color:#333333;">
         <li>🌍 (Diğer önemli haber 1) - Kaynak</li>
         <li>(Kalan haberleri buraya ekle...)</li>
     </ul>
 
     <h3 style="color:#d35400;">3. 👁️ KIZIL TAKIM NOTLARI (Propaganda Analizi)</h3>
-    <div style="font-size:14px; font-style:italic; color:#555;">{critic_report_placeholder}</div>
+    <div style="font-size:14px; font-style:italic; color:#555555 !important;">{critic_report_placeholder}</div>
 
-    <div style="background-color:#e8f8f5; padding:15px; border-radius:5px; margin-top:20px; border:1px solid #1abc9c;">
+    <div style="background-color:#e8f8f5; color:#333333 !important; padding:15px; border-radius:5px; margin-top:20px; border:1px solid #1abc9c;">
         <h4 style="color:#16a085; margin-top:0;">🇹🇷 ANKARA İÇİN POLİTİKA ÖNERİSİ</h4>
-        <p>(Makyevelist ve Realist bir perspektifle Türkiye'ye somut tavsiye ver.)</p>
+        <p style="color:#333333 !important;">(Makyevelist ve Realist bir perspektifle Türkiye'ye somut tavsiye ver.)</p>
     </div>
     <br>
-    <div style="background-color:#fff3cd; padding:10px; border-radius:5px;">
+    <div style="background-color:#fff3cd; color:#333333 !important; padding:10px; border-radius:5px;">
         <b style="color:#856404;">📚 GÜNÜN AKADEMİK KAVRAMI:</b> (Olaylarla ilgili bir IR kavramını açıkla.)
     </div>
     """
@@ -264,7 +265,7 @@ def run_agent_workflow(current_data, historical_memory):
     return final_report
 
 # ==========================================
-# 6. SES & MAİL & ARŞİV
+# 6. SES & MAİL & ARŞİV (GÜNCELLENDİ)
 # ==========================================
 async def generate_voice(text, output_file):
     communicate = edge_tts.Communicate(text, SES_MODELI)
@@ -281,11 +282,16 @@ def create_audio(text_content):
         return filename
     except: return None
 
-def archive(report_body):
+# --- DÜZELTME: raw_links eklendi (Kaynakça) ---
+def archive(report_body, raw_links):
     date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
     path = f"ARSIV/Analiz_{date_str}.md"
     if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
-    with open(path, "w", encoding="utf-8") as f: f.write(report_body)
+    
+    # Rapor ve kaynakçayı birleştir
+    full_content = f"{report_body}\n\n<hr>\n<h3>📚 DOĞRULANMIŞ KAYNAKÇA</h3>\n{raw_links}"
+    
+    with open(path, "w", encoding="utf-8") as f: f.write(full_content)
     try:
         subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"])
         subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
@@ -373,7 +379,10 @@ if __name__ == "__main__":
     if len(raw_data) > 50: 
         report = run_agent_workflow(raw_data, memory)
         graph_map = draw_network_graph(raw_data)
-        archive(report)
+        
+        # DÜZELTME: Kaynakçayı da arşive gönderiyoruz
+        archive(report, raw_links)
+        
         audio = create_audio(report)
         send_email_to_council(report, raw_links, audio, graph_map)
     else:
