@@ -181,7 +181,7 @@ def draw_network_graph(text_data):
     return filename
 
 # ==========================================
-# 5. AJANLI SİMÜLASYON (FORMAT GÜNCELLEMESİ) 🔥
+# 5. AJANLI SİMÜLASYON (CSS RENK DÜZELTMESİ EKLENDİ) 🔥
 # ==========================================
 def run_agent_workflow(current_data, historical_memory):
     
@@ -198,6 +198,7 @@ def run_agent_workflow(current_data, historical_memory):
 
     print("✍️ AJAN 4 (CHIEF EDITOR): Nihai raporu ŞABLONA GÖRE yazıyor...")
     
+    # --- YENİ HTML ŞABLONU (CSS Color Fix Eklendi) ---
     final_system_prompt = """Sen Savaş Odası Başkanısın. Raporun okunabilirliği her şeyden önemlidir.
     
     KATI BİÇİM KURALLARI (FORMAT):
@@ -232,9 +233,9 @@ def run_agent_workflow(current_data, historical_memory):
       <li>👉 <b>Türkiye</b> bu durumda... yapmalıdır.</li>
     </ul>
     
-    <div style="background-color:#fef9e7; padding:10px; border:1px solid #f1c40f; border-radius:5px;">
-    <b>🎲 GELECEK SENARYOLARI:</b>
-    <ul>
+    <div style="background-color:#fef9e7; color:#333333; padding:10px; border:1px solid #f1c40f; border-radius:5px;">
+    <b style="color:#d35400;">🎲 GELECEK SENARYOLARI:</b>
+    <ul style="color:#333333;">
        <li>%60 İhtimalle: ...</li>
        <li>%30 İhtimalle: ...</li>
     </ul>
@@ -292,7 +293,7 @@ def archive(report_body):
 def send_email_to_council(report_body, raw_links, audio_file, image_file):
     print(f"📧 Dağıtım Başlıyor: {len(ALICI_LISTESI)} Kişi")
     
-    # ⚠️ ÖNEMLİ: STREAMLIT PROJE LINKINI BURAYA YAPIŞTIRIN
+    # ⚠️ SENİN GERÇEK DASHBOARD LINKIN
     CANLI_DASHBOARD_LINKI = "https://siyasi-istihbarat-botu.streamlit.app" 
     
     saat = datetime.datetime.now().hour + 3 
@@ -309,6 +310,7 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
         server.login(GMAIL_USER, GMAIL_PASSWORD)
         
         for alici in ALICI_LISTESI:
+            print(f"   -> Gönderiliyor: {alici}")
             msg = MIMEMultipart('related')
             msg['From'] = GMAIL_USER
             msg['To'] = alici 
@@ -317,7 +319,7 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
             msg.attach(msg_alternative)
 
             html_content = f"""
-            <html><body style='font-family: "Segoe UI", sans-serif; color:#333; line-height: 1.6; background-color: #f4f4f4; padding: 20px;'>
+            <html><body style='font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; color:#333; line-height: 1.6; background-color: #f4f4f4; padding: 20px;'>
                 <div style="max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
                     
                     <div style="text-align: center; border-bottom: 3px solid {renk}; padding-bottom: 20px; margin-bottom: 20px;">
