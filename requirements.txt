@@ -9,3 +9,4 @@ trafilatura
 streamlit
 chromadb
 sentence-transformers
+duckduckgo-search
