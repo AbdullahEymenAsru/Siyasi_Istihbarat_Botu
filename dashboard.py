@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import glob
 import json
+import base64
 import chromadb
 from chromadb.utils import embedding_functions
 from groq import Groq
@@ -9,9 +10,12 @@ from duckduckgo_search import DDGS
 import folium
 from streamlit_folium import st_folium
 from supabase import create_client, Client
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # 1. AYARLAR
-st.set_page_config(page_title="Savaş Odası (SECURE)", page_icon="🔐", layout="wide")
+st.set_page_config(page_title="Savaş Odası (E2EE)", page_icon="🔐", layout="wide")
 
 # API Anahtarları Kontrolü
 if "GROQ_API_KEY" not in st.secrets or "SUPABASE_URL" not in st.secrets:
@@ -25,6 +29,43 @@ supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABAS
 # Klasör Kontrolleri
 for folder in ["ARSIV", "VEKTOR_DB"]:
     if not os.path.exists(folder): os.makedirs(folder)
+
+# --- ŞİFRELEME FONKSİYONLARI (GİZLİLİK KATMANI) ---
+def anahtar_turet(password, salt=b'SavasOdasiSabitTuz'):
+    """
+    Kullanıcının şifresinden benzersiz bir şifreleme anahtarı türetir.
+    """
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+    return key
+
+def sifrele(veri_json, password):
+    """Veriyi şifreler."""
+    try:
+        key = anahtar_turet(password)
+        f = Fernet(key)
+        veri_str = json.dumps(veri_json)
+        sifreli_byte = f.encrypt(veri_str.encode())
+        return base64.urlsafe_b64encode(sifreli_byte).decode()
+    except Exception as e:
+        print(f"Şifreleme hatası: {e}")
+        return None
+
+def sifreyi_coz(sifreli_str, password):
+    """Veriyi çözer."""
+    try:
+        key = anahtar_turet(password)
+        f = Fernet(key)
+        sifreli_byte = base64.urlsafe_b64decode(sifreli_str.encode())
+        cozulmus_byte = f.decrypt(sifreli_byte)
+        return json.loads(cozulmus_byte.decode())
+    except Exception as e:
+        return []
 
 # --- SABİT KOORDİNATLAR ---
 KOORDINATLAR = {
@@ -66,18 +107,25 @@ def kayit_ol(email, password):
         st.error(f"Kayıt hatası: {e}")
         return None
 
-def buluttan_yukle(user_id):
-    """Kullanıcının geçmiş sohbetini Supabase'den çeker."""
+def buluttan_yukle(user_id, password):
+    """Supabase'den şifreli veriyi çeker ve çözer."""
     try:
         response = supabase.table("chat_logs").select("messages").eq("user_id", user_id).execute()
-        if response.data: return response.data[0]["messages"]
-    except: pass
+        if response.data:
+            raw_data = response.data[0]["messages"]
+            if isinstance(raw_data, dict) and "encrypted_data" in raw_data:
+                return sifreyi_coz(raw_data["encrypted_data"], password)
+            else:
+                return [] 
+    except Exception as e: 
+        print(f"Yükleme hatası: {e}")
     return []
 
-def buluta_kaydet(user_id, messages):
-    """Sohbeti Supabase'e kaydeder."""
+def buluta_kaydet(user_id, messages, password):
+    """Sohbeti şifreler ve Supabase'e gönderir."""
     try:
-        data = {"user_id": user_id, "messages": messages}
+        sifreli_veri = sifrele(messages, password)
+        data = {"user_id": user_id, "messages": {"encrypted_data": sifreli_veri}}
         supabase.table("chat_logs").upsert(data, on_conflict="user_id").execute()
     except Exception as e: print(f"Kayıt hatası: {e}")
 
@@ -126,11 +174,16 @@ def harita_analiz(metin):
 # 1. OTURUM KONTROLÜ
 if "user" not in st.session_state:
     st.session_state.user = None
+    st.session_state.password_cache = None
 
-# GİRİŞ EKRANI (Eğer kullanıcı giriş yapmamışsa)
+# GİRİŞ EKRANI
 if not st.session_state.user:
-    st.title("🔐 SAVAŞ ODASI: GÜVENLİ GİRİŞ")
-    st.markdown("Verileriniz Supabase Bulutunda uçtan uca şifreli saklanmaktadır.")
+    st.title("🔐 SAVAŞ ODASI: UÇTAN UCA ŞİFRELİ (E2EE)")
+    st.markdown("""
+    **GİZLİLİK UYARISI:** Verileriniz **kendi belirlediğiniz şifre** ile şifrelenir. 
+    Veritabanı yöneticisi (Admin) dahil kimse bu verileri okuyamaz.
+    ⚠️ **Şifrenizi unutursanız verilerinizi kurtaramazsınız.**
+    """)
     
     tab_giris, tab_kayit = st.tabs(["Giriş Yap", "Kayıt Ol"])
     
@@ -141,7 +194,8 @@ if not st.session_state.user:
             user = giris_yap(email, password)
             if user:
                 st.session_state.user = user
-                st.session_state.messages = buluttan_yukle(user.id)
+                st.session_state.password_cache = password 
+                st.session_state.messages = buluttan_yukle(user.id, password)
                 st.rerun()
 
     with tab_kayit:
@@ -150,23 +204,27 @@ if not st.session_state.user:
         if st.button("Hesap Oluştur"):
             kayit_ol(new_email, new_pass)
             
-    st.stop() # Giriş yapılmadıysa kodun geri kalanı çalışmaz.
+    st.stop() 
 
-# --- BURADAN SONRASI SADECE GİRİŞ YAPANLARA GÖZÜKÜR ---
+# --- GİRİŞ YAPILDI ---
 
 user_email = st.session_state.user.email
 user_id = st.session_state.user.id
+user_pass = st.session_state.password_cache 
 
 # YAN MENÜ
-st.sidebar.success(f"Aktif Ajan: {user_email}")
+st.sidebar.success(f"Ajan: {user_email}")
+st.sidebar.info("🔒 E2EE Şifreleme Aktif")
+
 if st.sidebar.button("Güvenli Çıkış"):
     supabase.auth.sign_out()
     st.session_state.user = None
+    st.session_state.password_cache = None
     st.rerun()
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🧹 Geçmişi Temizle"):
-    buluta_kaydet(user_id, [])
+    buluta_kaydet(user_id, [], user_pass)
     st.session_state.messages = []
     st.rerun()
 
@@ -183,11 +241,11 @@ if files:
     with open(f"ARSIV/{sec}", "r", encoding="utf-8") as f: secilen_icerik = f.read()
 
 # ANA EKRAN
-st.title("☁️ KÜRESEL SAVAŞ ODASI (Level 7)")
+st.title("☁️ KÜRESEL SAVAŞ ODASI (Level 8)")
 with st.spinner("Beyin güncelleniyor..."): hafizayi_guncelle()
 
 # SEKMELER
-t1, t2, t3 = st.tabs(["📄 RAPOR", "🗺️ HARİTA", "🧠 HİBRİT CHAT"])
+t1, t2, t3 = st.tabs(["📄 RAPOR", "🗺️ HARİTA", "🧠 HİBRİT CHAT (GİZLİ)"])
 
 with t1: 
     st.markdown(secilen_icerik, unsafe_allow_html=True)
@@ -207,14 +265,16 @@ with t2:
         st_folium(m, width="100%")
 
 with t3:
-    st.subheader("💬 Hibrit İstihbarat Analisti")
+    st.subheader("💬 Şifreli İstihbarat Hattı")
     for m in st.session_state.messages:
         with st.chat_message(m["role"]): st.markdown(m["content"])
     
-    if q := st.chat_input("Emriniz nedir komutanım?"):
+    if q := st.chat_input("Emriniz nedir komutanım? (Şifreli Hat)"):
         st.session_state.messages.append({"role":"user","content":q})
         with st.chat_message("user"): st.markdown(q)
-        buluta_kaydet(user_id, st.session_state.messages) # Anlık Kayıt
+        
+        # 1. ŞİFRELE VE KAYDET
+        buluta_kaydet(user_id, st.session_state.messages, user_pass)
         
         with st.status("🕵️‍♂️ Analiz yapılıyor...") as s:
             st.write("📂 Arşiv taranıyor (RAG)...")
@@ -234,4 +294,6 @@ with t3:
                     if c.choices[0].delta.content: yield c.choices[0].delta.content
             res = st.write_stream(gen())
             st.session_state.messages.append({"role":"assistant","content":res})
-            buluta_kaydet(user_id, st.session_state.messages) # Anlık Kayıt
+            
+            # 2. ŞİFRELE VE KAYDET (Cevap Sonrası)
+            buluta_kaydet(user_id, st.session_state.messages, user_pass)
