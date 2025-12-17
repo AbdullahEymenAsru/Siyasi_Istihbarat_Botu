@@ -43,7 +43,7 @@ SITE_URL = "[https://siyasi-istihbarat-botu.streamlit.app](https://siyasi-istihb
 # API Anahtarları Kontrolü
 
 if "GROQ_API_KEY" not in st.secrets or "SUPABASE_URL" not in st.secrets:
-st.error("Lütfen Streamlit Secrets ayarlarından GROQ ve SUPABASE anahtarlarını ekleyin.")
+       st.error("Lütfen Streamlit Secrets ayarlarından GROQ ve SUPABASE anahtarlarını ekleyin.")
 st.stop()
 
 # İstemcileri Başlat
