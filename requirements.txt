@@ -13,3 +13,5 @@ streamlit
 streamlit-folium
 supabase
 cryptography
+sentence-transformers
+chromadb
