@@ -7,8 +7,6 @@ scipy
 trafilatura
 groq
 edge-tts
-chromadb
-sentence-transformers
 duckduckgo-search
 folium
 streamlit
