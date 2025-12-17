@@ -21,9 +21,10 @@ def main(page: ft.Page):
     page.scroll = "adaptive"
     
     # 1. BAŞLIK PARÇASI
+    # DÜZELTME: ft.icons.SHIELD yerine name="shield" kullanıldı.
     header = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.icons.SHIELD, color="red", size=40),
+            ft.Icon(name="shield", color="red", size=40),
             ft.Column([
                 ft.Text("SAVAŞ ODASI", size=25, weight="bold"),
                 ft.Text("Flet Destekli İstihbarat Portalı", size=12, color="grey")
@@ -34,7 +35,7 @@ def main(page: ft.Page):
         border_radius=10
     )
 
-    # 2. CHAT FONKSİYONU (Eski kodunuzun Flet hali)
+    # 2. CHAT FONKSİYONU
     def send_message(e):
         if not user_input.value: return
         
@@ -63,7 +64,7 @@ def main(page: ft.Page):
                 )
                 response = completion.choices[0].message.content
             else:
-                response = "API Anahtarı bulunamadı!"
+                response = "HATA: API Anahtarı bulunamadı! Secrets ayarlarını kontrol edin."
 
             # Asistan Mesajını Ekrana Ekle
             chat_list.controls.append(
@@ -87,7 +88,8 @@ def main(page: ft.Page):
     # 3. ARAYÜZ ELEMANLARI
     chat_list = ft.ListView(expand=True, spacing=10, auto_scroll=True)
     user_input = ft.TextField(hint_text="Emriniz?", expand=True, on_submit=send_message)
-    send_btn = ft.IconButton(icon=ft.icons.SEND, icon_color="red", on_click=send_message)
+    # DÜZELTME: ft.icons.SEND yerine icon="send" kullanıldı.
+    send_btn = ft.IconButton(icon="send", icon_color="red", on_click=send_message)
 
     # 4. SAYFA DÜZENİ (LAYOUT)
     layout = ft.Column([
@@ -99,9 +101,7 @@ def main(page: ft.Page):
 
     page.add(layout)
 
-# Uygulamayı Başlat
-ft.app(target=main, view=ft.AppView.WEB_BROWSER)
-
-# Replit'te çalışması için view=WEB_BROWSER ve port ayarı önemlidir
+# --- UYGULAMAYI BAŞLAT (Replit Konfigürasyonu) ---
 if __name__ == "__main__":
+    # Replit'te 'view=ft.AppView.WEB_BROWSER' ve 'port=8080' olması kritik öneme sahiptir.
     ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8080)
