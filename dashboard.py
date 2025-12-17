@@ -4,6 +4,7 @@ import glob
 import json
 import base64
 import time 
+import shutil
 import chromadb
 from sentence_transformers import SentenceTransformer
 from groq import Groq
@@ -26,7 +27,7 @@ st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️
 if "theme" not in st.session_state:
     st.session_state.theme = "Karanlık"
 
-# Tema Renk Paletleri - Kesin Karşıtlık (Contrast)
+# Tema Renk Paletleri
 if st.session_state.theme == "Karanlık":
     v_bg = "#0E1117"        # Derin Siyah
     v_text = "#FFFFFF"      # Saf Beyaz
@@ -44,25 +45,18 @@ else:
     v_border = "#DCDDE1"    # Gri Çerçeve
     v_accent = "#2E7D32"    # Koyu Yeşil
 
-# Nihai CSS: Streamlit'in varsayılanlarını ezer
+# Nihai CSS
 st.markdown(f"""
 <style>
-    /* 1. Ana Uygulama */
     .stApp {{ background-color: {v_bg} !important; color: {v_text} !important; }}
+    h1, h2, h3, h4, h5, h6, p, span, label, div, li, .stMarkdown, .stText {{ color: {v_text} !important; }}
     
-    /* 2. Tüm Yazılar */
-    h1, h2, h3, h4, h5, h6, p, span, label, div, li, .stMarkdown, .stText {{ 
-        color: {v_text} !important; 
-    }}
-    
-    /* 3. Sidebar */
     section[data-testid="stSidebar"] {{ 
         background-color: {v_sidebar} !important; 
         border-right: 1px solid {v_border} !important; 
     }}
     section[data-testid="stSidebar"] * {{ color: {v_text} !important; }}
     
-    /* 4. Input Alanları */
     .stTextInput input, .stTextArea textarea, [data-baseweb="select"] div {{ 
         background-color: {v_input_bg} !important; 
         color: {v_text} !important; 
@@ -71,7 +65,6 @@ st.markdown(f"""
         -webkit-text-fill-color: {v_text} !important;
     }}
     
-    /* 5. Chat Mesaj Kutuları */
     [data-testid="stChatMessage"] {{ 
         background-color: {v_chat_bg} !important; 
         border: 1px solid {v_border} !important; 
@@ -79,7 +72,6 @@ st.markdown(f"""
         margin-bottom: 10px !important; 
     }}
     
-    /* 6. Butonlar */
     .stButton button {{ 
         background-color: {v_accent} !important; 
         color: white !important;
@@ -89,12 +81,9 @@ st.markdown(f"""
     .stButton button p {{ color: white !important; font-weight: bold !important; }}
     .stButton button:hover {{ opacity: 0.9; }}
     
-    /* 7. Tablar ve Linkler */
     button[data-baseweb="tab"] p {{ color: {v_text} !important; }}
     [data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
     a {{ color: {v_accent} !important; text-decoration: none; font-weight: bold; }}
-    
-    /* 8. Rapor Alanı */
     .stHtmlContainer {{ color: {v_text} !important; background-color: transparent !important; }}
     svg {{ fill: {v_text} !important; }}
 </style>
@@ -173,16 +162,37 @@ def get_chroma(): return chromadb.PersistentClient(path="VEKTOR_DB")
 @st.cache_resource
 def get_embedder(): return YerelEmbedder()
 
+# --- DÜZELTİLMİŞ HAFIZA FONKSİYONU (HATA ÖNLEYİCİ) ---
 def hafizayi_guncelle():
-    col = get_chroma().get_or_create_collection(name="savas_odasi", embedding_function=get_embedder())
-    for d in glob.glob("ARSIV/*.md"):
-        if not col.get(ids=[os.path.basename(d)])['ids']:
-            with open(d,"r",encoding="utf-8") as f: col.add(documents=[f.read()], ids=[os.path.basename(d)])
+    try:
+        chroma = get_chroma()
+        ef = get_embedder()
+        # İSİM DEĞİŞİKLİĞİ: 'savas_odasi_v2' yaparak eski bozuk veritabanından kurtuluyoruz
+        col = chroma.get_or_create_collection(name="savas_odasi_v2", embedding_function=ef)
+        
+        for d in glob.glob("ARSIV/*.md"):
+            try:
+                adi = os.path.basename(d)
+                # Dosya zaten var mı kontrolü
+                if not col.get(ids=[adi])['ids']:
+                    with open(d, "r", encoding="utf-8") as f: 
+                        col.add(documents=[f.read()], ids=[adi], metadatas=[{"source": adi}])
+            except Exception as e:
+                print(f"Dosya işleme hatası ({d}): {e}")
+    except Exception as main_e:
+        st.error(f"Kritik Veritabanı Hatası: {main_e}")
+        # Hata durumunda klasörü temizlemeyi dene (Opsiyonel Güvenlik)
+        try:
+            if os.path.exists("VEKTOR_DB"):
+                shutil.rmtree("VEKTOR_DB")
+                os.makedirs("VEKTOR_DB")
+        except: pass
 
 def hafizadan_getir(soru):
     try:
-        res = get_chroma().get_collection(name="savas_odasi", embedding_function=get_embedder()).query(query_texts=[soru], n_results=3)
-        return "\n".join(res['documents'][0])
+        # İSİM DEĞİŞİKLİĞİ BURADA DA YAPILDI
+        res = get_chroma().get_collection(name="savas_odasi_v2", embedding_function=get_embedder()).query(query_texts=[soru], n_results=3)
+        return "\n".join(res['documents'][0]) if res['documents'] else "Arşivde veri yok."
     except: return "Hafıza verisi yok."
 
 def web_ara(soru):
@@ -282,27 +292,17 @@ if st.sidebar.button("🗑️ İmha Et"):
 
 if st.sidebar.button("Çıkış"): st.session_state.clear(); st.rerun()
 
-# --- KRİTİK DÜZELTME: NameError (rep) ENGELLEME BLOĞU ---
-# Değişkenleri varsayılan olarak tanımlıyoruz ki hata almasın
+# --- RAPOR SEÇİMİ (GÜVENLİ) ---
 rep = "Veri Yok"
 secilen_icerik = "Görüntülenecek rapor bulunamadı."
-
 try:
     dosyalar = glob.glob("ARSIV/*.md")
     dosyalar.sort(key=os.path.getmtime, reverse=True)
-    
     if dosyalar:
         files = [os.path.basename(f) for f in dosyalar]
-        rep = st.sidebar.radio("📁 Rapor Arşivi", files)
-        
-        # Dosya seçildiyse içeriğini oku
-        try:
-            with open(f"ARSIV/{rep}", "r", encoding="utf-8") as f:
-                secilen_icerik = f.read()
-        except:
-            secilen_icerik = "Dosya okunamadı."
-except Exception as e:
-    st.sidebar.error(f"Arşiv hatası: {e}")
+        rep = st.sidebar.radio("🗄️ Rapor Arşivi", files)
+        with open(f"ARSIV/{rep}", "r", encoding="utf-8") as f: secilen_icerik = f.read()
+except: pass
 
 # --- ANA EKRAN (SPLIT-SCREEN) ---
 st.title("☁️ KÜRESEL SAVAŞ ODASI")
@@ -337,17 +337,16 @@ with col_sag:
         if not st.session_state.is_guest:
              buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
 
-        with st.status("Veriler analiz ediliyor...") as s:
+        with st.status("Analiz ediliyor...") as s:
             arsiv = hafizadan_getir(q)
             web = web_ara(q)
-            s.update(label="Stratejik yanıt hazırlanıyor...", state="complete")
+            s.update(label="Tamamlandı", state="complete")
         
         with chat_container:
             with st.chat_message("assistant"):
-                ph = st.empty()
-                full = ""
+                ph, full = st.empty(), ""
                 sys_msg = {"role": "system", "content": "Sen Savaş Odası stratejistisin. Raporu ve verileri kullanarak derin analiz yap."}
-                enhanced_q = {"role": "user", "content": f"SORU: {q}\n\nARŞİV: {arsiv}\n\nWEB: {web}"}
+                enhanced_q = {"role": "user", "content": f"SORU: {q}\n\n[ARŞİV]:\n{arsiv}\n\n[WEB]:\n{web}"}
                 
                 try:
                     stream = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[sys_msg] + msgs[-10:-1] + [enhanced_q], stream=True)
