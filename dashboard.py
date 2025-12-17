@@ -54,7 +54,7 @@ supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABAS
 # Klasör Kontrolleri
 
 for folder in ["ARSIV", "VEKTOR_DB"]:
-if not os.path.exists(folder): os.makedirs(folder)
+       if not os.path.exists(folder): os.makedirs(folder)
 
 # -- YENİ MANUEL EMBEDDING SINIFI ---
 
