@@ -14,6 +14,8 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from datetime import datetime
+import streamlit.components.v1 as components # HTML Görünümü için
+import re # Temizlik için
 
 # ==========================================
 # 1. AYARLAR & KURULUM
@@ -212,30 +214,71 @@ if not st.session_state.user and not st.session_state.is_guest:
     st.title("🔐 SAVAŞ ODASI: GİRİŞ EKRANI")
     st.markdown("Verileriniz uçtan uca şifrelidir (E2EE). Misafir girişlerinde veri kaydedilmez.")
     
+    # URL'den gelen Şifre Sıfırlama Token Kontrolü
+    query_params = st.query_params
+    if "type" in query_params and query_params["type"] == "recovery":
+        st.info("🔄 Şifre Sıfırlama Modu")
+        new_pass_reset = st.text_input("Yeni Şifrenizi Belirleyin (Sıfırlama)", type="password")
+        if st.button("Şifreyi Güncelle"):
+            try:
+                supabase.auth.update_user({"password": new_pass_reset})
+                st.success("Şifre güncellendi! Lütfen yeni şifrenizle soldan giriş yapın.")
+            except Exception as e: st.error(f"Hata: {e}")
+
     col1, col2 = st.columns(2)
+    
+    # --- ÜYE GİRİŞİ ve EKSTRA İŞLEMLER ---
     with col1:
         st.subheader("🔑 Üye Girişi")
         email = st.text_input("E-posta")
         password = st.text_input("Şifre", type="password")
+        
         if st.button("Giriş Yap"):
             user = giris_yap(email, password)
             if user:
                 st.session_state.user = user
                 st.session_state.password_cache = password
                 
-                # --- VERİ YÜKLEME VE DÖNÜŞTÜRME ---
+                # --- VERİ YÜKLEME VE DÖNÜŞTÜRME (MIGRATION) ---
                 yuklenen_veri = buluttan_yukle(user.id, password)
-                if isinstance(yuklenen_veri, list): # Eski format (Liste) ise dönüştür
+                
+                # Eski veritabanı formatı (Liste) ise Sözlüğe çevir
+                if isinstance(yuklenen_veri, list): 
                     st.session_state.chat_sessions = {"Genel Strateji": yuklenen_veri if yuklenen_veri else []}
-                elif isinstance(yuklenen_veri, dict): # Yeni format (Sözlük) ise direkt al
+                # Yeni format (Sözlük) ise direkt al
+                elif isinstance(yuklenen_veri, dict): 
                     st.session_state.chat_sessions = yuklenen_veri
-                else: # Hiç veri yoksa
+                else: 
                     st.session_state.chat_sessions = {"Genel Strateji": []}
                 
                 st.rerun()
+        
+        # --- GERİ GETİRİLEN ÖZELLİKLER ---
+        st.markdown("---")
+        
+        # Şifremi Unuttum
+        with st.expander("❓ Şifremi Unuttum"):
+            st.info("E-posta adresinizi girin, sıfırlama bağlantısı gönderelim.")
+            reset_mail = st.text_input("Kayıtlı E-posta Adresi")
+            if st.button("Sıfırlama Linki Gönder"):
+                if reset_mail:
+                    sifre_sifirla(reset_mail)
+                else:
+                    st.warning("Lütfen e-posta adresini girin.")
+
+        # Yeni Hesap Oluştur
+        with st.expander("📝 Yeni Hesap Oluştur"):
+            new_email = st.text_input("Yeni E-posta")
+            new_pass = st.text_input("Yeni Şifre", type="password")
+            if st.button("Kayıt Ol"): 
+                if new_email and new_pass:
+                    kayit_ol(new_email, new_pass)
+                else:
+                    st.warning("Lütfen bilgileri eksiksiz girin.")
 
     with col2:
         st.subheader("🕵️ Misafir Girişi")
+        st.info("Kayıt tutulmaz. Sayfa yenilenince tüm veriler silinir.")
         if st.button("Misafir Olarak Devam Et >>"):
             st.session_state.is_guest = True
             st.session_state.chat_sessions = {"Misafir Oturumu": []}
@@ -316,7 +359,14 @@ with st.spinner("Sistem Hazırlanıyor..."): hafizayi_guncelle()
 
 t1, t2, t3 = st.tabs(["📄 RAPOR", "🗺️ HARİTA", "🧠 HİBRİT CHAT"])
 
-with t1: st.markdown(secilen_icerik, unsafe_allow_html=True)
+with t1: 
+    # HTML Temizliği ve Render
+    if "```" in secilen_icerik:
+        secilen_icerik = re.sub(r"```html", "", secilen_icerik)
+        secilen_icerik = re.sub(r"```", "", secilen_icerik)
+    
+    st.info(f"📂 Görüntülenen Rapor: {sec}")
+    components.html(secilen_icerik, height=800, scrolling=True)
 
 with t2:
     if st.button("Haritayı Analiz Et ve Çiz"):
@@ -377,7 +427,7 @@ with t3:
             ] + recent_history[:-1] + [enriched_last_message]
 
             try:
-                # PLAN A: 70B Modeli
+                # PLAN A: 70B Modeli (Zeki ve Derin)
                 stream = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=api_messages,
@@ -386,7 +436,7 @@ with t3:
                     max_tokens=1024
                 )
             except Exception as e:
-                # PLAN B: 8B Modeli (Yedek Hat)
+                # PLAN B: 8B Modeli (Yedek Hat - Hızlı ve Kotası Geniş)
                 st.warning(f"⚠️ Ana hat meşgul, yedek kanaldan (8B) bağlanılıyor... ({str(e)[:40]}...)")
                 try:
                     stream = client.chat.completions.create(
