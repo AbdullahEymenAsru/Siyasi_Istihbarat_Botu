@@ -3,6 +3,7 @@ import os
 import glob
 import json
 import base64
+import time 
 import chromadb
 from sentence_transformers import SentenceTransformer
 from groq import Groq
@@ -28,7 +29,6 @@ st.markdown("""
 <style>
 .stChatMessage { border-radius: 10px; padding: 10px; }
 .stButton button { width: 100%; border-radius: 5px; }
-/* Input alanlarını belirginleştir */
 .stTextInput input { border: 1px solid #4CAF50; }
 </style>
 """, unsafe_allow_html=True)
@@ -81,7 +81,7 @@ def sifreyi_coz(sifreli_str, password):
         sifreli_byte = base64.urlsafe_b64decode(sifreli_str.encode())
         cozulmus_byte = f.decrypt(sifreli_byte)
         return json.loads(cozulmus_byte.decode())
-    except: return {} # Boş sözlük döndür
+    except: return {} 
 
 # -- SABİT KOORDİNATLAR ---
 KOORDINATLAR = {
@@ -132,23 +132,41 @@ def sifre_sifirla(email):
     except Exception as e:
         st.error(f"Mail gönderme hatası: {e}")
 
+# --- GÜÇLENDİRİLMİŞ YÜKLEME FONKSİYONU ---
 def buluttan_yukle(user_id, password):
-    """Verileri Supabase'den çeker ve şifresini çözer."""
+    """Verileri Supabase'den çeker, şifresini çözer ve formatı doğrular."""
+    print(f"📥 Veri çekiliyor... User ID: {user_id}")
     try:
         response = supabase.table("chat_logs").select("messages").eq("user_id", user_id).execute()
+        
         if response.data:
             raw_data = response.data[0]["messages"]
-            # Eğer veri şifreliyse (yeni sistem)
+            
+            # 1. DURUM: Veri Şifreliyse (Yeni Sistem)
             if isinstance(raw_data, dict) and "encrypted_data" in raw_data:
+                print("🔐 Şifreli veri bulundu, çözülüyor...")
                 decrypted = sifreyi_coz(raw_data["encrypted_data"], password)
-                return decrypted
-            # Eğer veri şifresizse (eski sistemden kalma) veya bozuksa
+                if decrypted:
+                    return decrypted
+                else:
+                    st.error("⚠️ Şifre doğru ancak veri çözülemedi. Şifrenizi mi değiştirdiniz?")
+                    return {}
+            
+            # 2. DURUM: Veri Şifresizse (Eski Sistem veya Hata)
             elif isinstance(raw_data, dict):
+                print("🔓 Şifresiz veri bulundu.")
                 return raw_data
+            
             else:
-                return {} 
+                print("⚠️ Veri formatı tanınamadı.")
+                return {}
+        else:
+            print("📭 Bu kullanıcıya ait bulutta kayıt yok.")
+            return {}
+            
     except Exception as e:
-        print(f"Yükleme hatası: {e}")
+        print(f"❌ Yükleme Hatası: {e}")
+        st.error(f"Veri yüklenirken kritik hata: {e}")
     return {}
 
 def buluta_kaydet(user_id, data_to_save, password):
@@ -239,32 +257,44 @@ if not st.session_state.user and not st.session_state.is_guest:
 
     col1, col2 = st.columns(2)
 
-    # --- ÜYE GİRİŞİ ---
+    # --- ÜYE GİRİŞİ (GÜÇLENDİRİLMİŞ) ---
     with col1:
         st.subheader("🔑 Üye Girişi")
         email = st.text_input("E-posta")
-        password = st.text_input("Şifre", type="password")
+        # Şifre alanı 'password' olmalı ki veri çözülebilsin
+        password = st.text_input("Şifre", type="password") 
 
         if st.button("Giriş Yap"):
+            if not email or not password:
+                st.warning("Lütfen e-posta ve şifrenizi girin.")
+                st.stop()
+
             user = giris_yap(email, password)
+            
             if user:
+                # 1. Kullanıcıyı oturuma al
                 st.session_state.user = user
                 st.session_state.password_cache = password
+                
+                # 2. Verileri Buluttan Yükle (KRİTİK ADIM)
+                with st.spinner("Kriptolu arşiv çözülüyor..."):
+                    yuklenen_veri = buluttan_yukle(user.id, password)
 
-                # --- VERİ YÜKLEME VE DÖNÜŞTÜRME ---
-                yuklenen_veri = buluttan_yukle(user.id, password)
-
-                if yuklenen_veri and isinstance(yuklenen_veri, dict) and len(yuklenen_veri) > 0:
+                # 3. Yüklenen veriyi oturum değişkenine ata
+                if yuklenen_veri and len(yuklenen_veri) > 0:
                     st.session_state.chat_sessions = yuklenen_veri
-                    # İlk anahtarı seç
+                    # En son konuşulan oturumu aç (yoksa ilkini)
                     st.session_state.current_session_name = list(yuklenen_veri.keys())[0]
+                    st.success(f"✅ {len(yuklenen_veri)} adet şifreli sohbet başarıyla yüklendi.")
+                    time.sleep(1) # Kullanıcının mesajı görmesi için kısa bekleme
                 else:
-                    # Yeni kullanıcı veya veri yoksa default başlat
+                    # Eğer veri yoksa temiz bir sayfa aç
+                    st.warning("Henüz kaydedilmiş sohbetiniz yok veya şifre değişikliği nedeniyle eski verilere erişilemiyor.")
                     st.session_state.chat_sessions = {
                         "Genel Strateji": [{"role": "assistant", "content": "Komutanım, Savaş Odası hazır. Emrinizi bekliyorum."}]
                     }
                     st.session_state.current_session_name = "Genel Strateji"
-                
+
                 st.rerun()
 
         st.markdown("---")
@@ -331,7 +361,7 @@ if selected_session != st.session_state.current_session_name:
     st.session_state.current_session_name = selected_session
     st.rerun()
 
-# --- YENİ: SOHBET ADINI DÜZENLEME ---
+# --- SOHBET ADINI DÜZENLEME ---
 new_session_name = st.sidebar.text_input(
     "📝 Sohbet Adını Düzenle", 
     value=st.session_state.current_session_name
