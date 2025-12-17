@@ -28,12 +28,15 @@ client = Groq(api_key=GROQ_API_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 
-# SADECE AKTİF KULLANICILARI ÇEKEN FONKSİYON
+# --- KRİTİK DÜZELTME: SADECE 'TRUE' OLANLARI ÇEK ---
 def get_email_list():
     try:
+        # Sadece 'aktif' sütunu TRUE olanları filtrele
         response = supabase.table("abone_listesi").select("email").eq("aktif", True).execute()
         return [row['email'] for row in response.data] if response.data else []
-    except: return []
+    except Exception as e:
+        print(f"⚠️ Veritabanı Hatası: {e}")
+        return []
 
 ALICI_LISTESI = get_email_list()
 
@@ -83,7 +86,7 @@ def get_full_text(url):
     if "t.me" in url or ".pdf" in url: return None
     try:
         downloaded = trafilatura.fetch_url(url)
-        return trafilatura.extract(downloaded)[:2500] if downloaded else None
+        return trafilatura.extract(downloaded)[:2000] if downloaded else None
     except: return None
 
 def fetch_news():
@@ -92,7 +95,7 @@ def fetch_news():
     ai_input_data = []
     reference_html_list = []
     
-    # 12 SAATLİK TEKRAR KONTROLÜ
+    # 12 SAATLİK TEKRAR KONTROLÜ (Veritabanına sor)
     try:
         past_12h = datetime.datetime.now() - datetime.timedelta(hours=12)
         response = supabase.table("reports").select("content").gte("created_at", past_12h.isoformat()).execute()
@@ -129,7 +132,7 @@ def fetch_news():
     return "\n\n".join(ai_input_data), "".join(reference_html_list)
 
 # ==========================================
-# 4. DOKTRİNER ANALİZ (SENİN SEVDİĞİN ESKİ FORMAT)
+# 4. DOKTRİNER ANALİZ (ESKİ & DETAYLI FORMAT)
 # ==========================================
 
 def run_agent_workflow(current_data):
@@ -213,11 +216,14 @@ def create_audio_summary(report_html):
     except: return None
 
 def send_email(report_body, references_html, audio_file):
-    if not ALICI_LISTESI: return
+    if not ALICI_LISTESI: 
+        print("⚠️ Aktif alıcı bulunamadı.")
+        return
+    
     print(f"📧 {len(ALICI_LISTESI)} kişiye gönderiliyor...")
     today = datetime.datetime.now().strftime("%d.%m.%Y")
     
-    # SENİN İSTEDİĞİN GÖRSEL TASARIM
+    # TASARIM: Sizin İstediğiniz "Eski Tarz" (Görsel Odaklı)
     email_html = f"""
     <html>
     <body style="font-family: Arial, sans-serif; background-color: #ffffff; padding: 20px; color: #333;">
@@ -272,7 +278,7 @@ def send_email(report_body, references_html, audio_file):
         print(f"❌ Mail Hatası: {e}")
 
 # ==========================================
-# 6. ÇALIŞTIRMA
+# 6. ÇALIŞTIRMA (MAIN BLOCK)
 # ==========================================
 
 if __name__ == "__main__":
