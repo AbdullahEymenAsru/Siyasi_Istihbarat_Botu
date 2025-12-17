@@ -4,6 +4,7 @@ import glob
 import json
 import base64
 import time 
+import shutil
 import chromadb
 from sentence_transformers import SentenceTransformer
 from groq import Groq
@@ -17,7 +18,7 @@ import streamlit.components.v1 as components
 import re 
 
 # ==========================================
-# 1. AYARLAR, TEMA MOTORU & KUSURSUZ CSS
+# 1. AYARLAR, TEMA VE CSS
 # ==========================================
 
 st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️", layout="wide")
@@ -25,63 +26,33 @@ st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️
 if "theme" not in st.session_state:
     st.session_state.theme = "Karanlık"
 
-# Tema Renk Paletleri
+# Tema Renkleri
 if st.session_state.theme == "Karanlık":
-    v_bg = "#0E1117"        # Derin Siyah
-    v_text = "#FFFFFF"      # Saf Beyaz
-    v_sidebar = "#161B22"   # Sidebar
-    v_chat_bg = "#1A1C24"   # Chat Balonu
-    v_input_bg = "#262730"  # Input Alanı
-    v_border = "#30363D"    # Çerçeveler
-    v_accent = "#4CAF50"    # Vurgu Yeşili
+    v_bg, v_text, v_sidebar = "#0E1117", "#FFFFFF", "#161B22"
+    v_chat_bg, v_input_bg = "#1A1C24", "#262730"
+    v_border, v_accent = "#30363D", "#4CAF50"
 else:
-    v_bg = "#FFFFFF"        # Beyaz
-    v_text = "#121212"      # Koyu Siyah
-    v_sidebar = "#F8F9FA"   # Açık Gri Sidebar
-    v_chat_bg = "#F0F2F6"   # Açık Gri Chat
-    v_input_bg = "#FFFFFF"  # Beyaz Input
-    v_border = "#DCDDE1"    # Gri Çerçeve
-    v_accent = "#2E7D32"    # Koyu Yeşil
+    v_bg, v_text, v_sidebar = "#FFFFFF", "#121212", "#F8F9FA"
+    v_chat_bg, v_input_bg = "#F0F2F6", "#FFFFFF"
+    v_border, v_accent = "#DCDDE1", "#2E7D32"
 
-# Nihai CSS
+# CSS
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {v_bg} !important; color: {v_text} !important; }}
     h1, h2, h3, h4, h5, h6, p, span, label, div, li, .stMarkdown, .stText {{ color: {v_text} !important; }}
-    
-    section[data-testid="stSidebar"] {{ 
-        background-color: {v_sidebar} !important; 
-        border-right: 1px solid {v_border} !important; 
-    }}
+    section[data-testid="stSidebar"] {{ background-color: {v_sidebar} !important; border-right: 1px solid {v_border} !important; }}
     section[data-testid="stSidebar"] * {{ color: {v_text} !important; }}
-    
     .stTextInput input, .stTextArea textarea, [data-baseweb="select"] div {{ 
-        background-color: {v_input_bg} !important; 
-        color: {v_text} !important; 
-        border: 1px solid {v_accent} !important; 
-        border-radius: 5px !important;
-        -webkit-text-fill-color: {v_text} !important;
+        background-color: {v_input_bg} !important; color: {v_text} !important; border: 1px solid {v_accent} !important; 
+        border-radius: 5px !important; -webkit-text-fill-color: {v_text} !important;
     }}
-    
-    [data-testid="stChatMessage"] {{ 
-        background-color: {v_chat_bg} !important; 
-        border: 1px solid {v_border} !important; 
-        border-radius: 10px; 
-        margin-bottom: 10px !important; 
-    }}
-    
-    .stButton button {{ 
-        background-color: {v_accent} !important; 
-        color: white !important;
-        border: none !important; 
-        transition: 0.3s; 
-    }}
+    [data-testid="stChatMessage"] {{ background-color: {v_chat_bg} !important; border: 1px solid {v_border} !important; border-radius: 10px; margin-bottom: 10px !important; }}
+    .stButton button {{ background-color: {v_accent} !important; color: white !important; border: none !important; }}
     .stButton button p {{ color: white !important; font-weight: bold !important; }}
-    .stButton button:hover {{ opacity: 0.9; }}
-    
     button[data-baseweb="tab"] p {{ color: {v_text} !important; }}
     [data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
-    a {{ color: {v_accent} !important; text-decoration: none; font-weight: bold; }}
+    a {{ color: {v_accent} !important; text-decoration: none; }}
     .stHtmlContainer {{ color: {v_text} !important; background-color: transparent !important; }}
     svg {{ fill: {v_text} !important; }}
 </style>
@@ -97,20 +68,23 @@ if "GROQ_API_KEY" not in st.secrets or "SUPABASE_URL" not in st.secrets:
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-# Klasör Kontrolü (Sadece ARSIV yeterli, VEKTOR_DB artık RAM'de)
 if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
 
 # ==========================================
 # 2. ÇEKİRDEK FONKSİYONLAR
 # ==========================================
 
+# --- DÜZELTİLMİŞ EMBEDDING SINIFI ---
 class YerelEmbedder:
     def __init__(self):
         self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
-        self.name = "YerelEmbedder" # ChromaDB Kimlik Hatası Çözümü
-
+    
     def __call__(self, input):
         return self.model.encode(input).tolist()
+    
+    # ChromaDB'nin aradığı kimlik fonksiyonu budur
+    def name(self):
+        return "YerelEmbedder"
 
 def anahtar_turet(password):
     kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=b'SavasOdasiSabitTuz', iterations=100000)
@@ -159,27 +133,24 @@ def buluta_kaydet(user_id, data, password):
     encrypted = sifrele(data, password)
     if encrypted: supabase.table("chat_logs").upsert({"user_id": user_id, "messages": {"encrypted_data": encrypted}}, on_conflict="user_id").execute()
 
-# --- EPHEMERAL (RAM) HAFIZA SİSTEMİ ---
-# PersistentClient yerine EphemeralClient kullanıyoruz.
-# Bu sayede diske yazma izni gerekmez, hata çözülür.
+# --- EPHEMERAL (RAM) HAFIZA SİSTEMİ (v4 - Cache Temizleyici) ---
 @st.cache_resource
-def get_chroma(): return chromadb.EphemeralClient() 
+def get_chroma_v4(): 
+    return chromadb.EphemeralClient()
 
 @st.cache_resource
-def get_embedder(): return YerelEmbedder()
+def get_embedder_v4(): 
+    return YerelEmbedder()
 
 def hafizayi_guncelle():
     try:
-        chroma = get_chroma()
-        ef = get_embedder()
-        # Ephemeral olduğu için her seferinde oluşturması sorun değil, hızlıdır.
-        col = chroma.get_or_create_collection(name="savas_odasi_ram", embedding_function=ef)
+        chroma = get_chroma_v4()
+        ef = get_embedder_v4()
+        col = chroma.get_or_create_collection(name="savas_odasi_ram_v4", embedding_function=ef)
         
-        # Dosyaları RAM'e yükle
         for d in glob.glob("ARSIV/*.md"):
             try:
                 adi = os.path.basename(d)
-                # RAM'de zaten varsa atla
                 if not col.get(ids=[adi])['ids']:
                     with open(d, "r", encoding="utf-8") as f: 
                         col.add(documents=[f.read()], ids=[adi], metadatas=[{"source": adi}])
@@ -189,7 +160,7 @@ def hafizayi_guncelle():
 
 def hafizadan_getir(soru):
     try:
-        res = get_chroma().get_collection(name="savas_odasi_ram", embedding_function=get_embedder()).query(query_texts=[soru], n_results=3)
+        res = get_chroma_v4().get_collection(name="savas_odasi_ram_v4", embedding_function=get_embedder_v4()).query(query_texts=[soru], n_results=3)
         return "\n".join(res['documents'][0]) if res['documents'] else "Arşivde veri yok."
     except: return "Hafıza verisi yok."
 
@@ -240,16 +211,9 @@ if not st.session_state.user and not st.session_state.is_guest:
                 d = buluttan_yukle(u.id, p)
                 if d: st.session_state.chat_sessions = d; st.session_state.current_session_name = list(d.keys())[0]
                 st.rerun()
-        
-        with st.expander("Şifremi Unuttum"):
-            rm = st.text_input("Mail Adresi")
-            if st.button("Sıfırlama Gönder"): sifre_sifirla(rm)
-
         with st.expander("Yeni Kayıt"):
-            ne = st.text_input("Yeni E-posta", key="ne")
-            np = st.text_input("Yeni Şifre", type="password", key="np")
+            ne, np = st.text_input("E-posta", key="ne"), st.text_input("Şifre", type="password", key="np")
             if st.button("Kayıt Ol"): kayit_ol(ne, np)
-
     with col2:
         st.subheader("🕵️ Misafir")
         if st.button("Kayıtsız Devam Et >>"): st.session_state.is_guest = True; st.rerun()
@@ -292,34 +256,30 @@ if st.sidebar.button("Çıkış"): st.session_state.clear(); st.rerun()
 
 # --- RAPOR SEÇİMİ ---
 rep = "Veri Yok"
-secilen_icerik = "Görüntülenecek rapor bulunamadı."
+secilen_icerik = "Rapor bulunamadı."
 try:
     dosyalar = glob.glob("ARSIV/*.md")
     dosyalar.sort(key=os.path.getmtime, reverse=True)
     if dosyalar:
         files = [os.path.basename(f) for f in dosyalar]
         rep = st.sidebar.radio("🗄️ Rapor Arşivi", files)
-        try:
-            with open(f"ARSIV/{rep}", "r", encoding="utf-8") as f: secilen_icerik = f.read()
-        except: pass
+        with open(f"ARSIV/{rep}", "r", encoding="utf-8") as f: secilen_icerik = f.read()
 except: pass
 
-# --- ANA EKRAN (SPLIT-SCREEN) ---
+# --- ANA EKRAN ---
 st.title("☁️ KÜRESEL SAVAŞ ODASI")
 with st.spinner("İstihbarat Hazırlanıyor..."): hafizayi_guncelle()
 
 col_sol, col_sag = st.columns([55, 45], gap="medium")
 
-# SOL: RAPOR
 with col_sol:
     st.subheader(f"📄 Rapor: {rep}")
     if rep != "Veri Yok":
         c = re.sub(r"```html|```", "", secilen_icerik)
         components.html(c, height=1000, scrolling=True)
     else:
-        st.info(secilen_icerik)
+        st.info("Arşivde görüntülenecek rapor bulunamadı.")
 
-# SAĞ: CHAT
 with col_sag:
     st.subheader(f"🧠 Kanal: {st.session_state.current_session_name}")
     chat_container = st.container(height=850)
@@ -334,22 +294,19 @@ with col_sag:
         with chat_container:
             with st.chat_message("user"): st.markdown(q)
         
-        if not st.session_state.is_guest:
-             buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
-
-        with st.status("Veriler analiz ediliyor...") as s:
+        with st.status("Analiz Yapılıyor...") as s:
             arsiv = hafizadan_getir(q)
             web = web_ara(q)
-            s.update(label="Stratejik yanıt hazırlanıyor...", state="complete")
+            s.update(label="Strateji oluşturuluyor...", state="complete")
         
         with chat_container:
             with st.chat_message("assistant"):
                 ph, full = st.empty(), ""
-                sys_msg = {"role": "system", "content": "Sen Savaş Odası stratejistisin. Raporu ve verileri kullanarak derin analiz yap."}
-                enhanced_q = {"role": "user", "content": f"SORU: {q}\n\n[ARŞİV]:\n{arsiv}\n\n[WEB]:\n{web}"}
+                sys = {"role": "system", "content": "Sen Savaş Odası stratejistisin. Raporu ve verileri kullanarak derin analiz yap."}
+                query_context = {"role": "user", "content": f"SORU: {q}\n\n[ARŞİV]:\n{arsiv}\n\n[WEB]:\n{web}"}
                 
                 try:
-                    stream = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[sys_msg] + msgs[-10:-1] + [enhanced_q], stream=True)
+                    stream = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[sys] + msgs[-5:-1] + [query_context], stream=True)
                     for chunk in stream:
                         if chunk.choices[0].delta.content:
                             full += chunk.choices[0].delta.content
