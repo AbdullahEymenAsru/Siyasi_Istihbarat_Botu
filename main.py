@@ -303,7 +303,9 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
         return
 
     print(f"📧 Dağıtım Başladı: {len(ALICI_LISTESI)} alıcı.")
-    CANLI_DASHBOARD_LINKI = "[https://siyasi-istihbarat-botu.streamlit.app](https://siyasi-istihbarat-botu.streamlit.app)"
+    
+    # --- DÜZELTME BURADA YAPILDI: Saf URL formatı ---
+    CANLI_DASHBOARD_LINKI = "https://siyasi-istihbarat-botu.streamlit.app/"
 
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
