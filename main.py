@@ -15,24 +15,29 @@ from email.mime.base import MIMEBase
 from email import encoders
 
 # ==========================================
-# 1. AYARLAR & GÜVENLİK
+# 1. AYARLAR & GÜVENLİK PROTOKOLLERİ
 # ==========================================
 
+# Çevresel Değişkenler
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GMAIL_USER = os.environ.get("GMAIL_USER")
 GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
+# İstemci Kurulumları
 client = Groq(api_key=GROQ_API_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 
+# Dinamik Alıcı Listesi
 def get_email_list():
     try:
         response = supabase.table("abone_listesi").select("email").execute()
         return [row['email'] for row in response.data] if response.data else []
-    except: return []
+    except Exception as e:
+        print(f"⚠️ Alıcı listesi hatası: {e}")
+        return []
 
 ALICI_LISTESI = get_email_list()
 
@@ -41,42 +46,34 @@ ALICI_LISTESI = get_email_list()
 # ==========================================
 
 RSS_SOURCES = {
-    # --- STRATEJİK DÜŞÜNCE KURULUŞLARI (THINK-TANKS) ---
-    "STRATEJIK": [
+    # --- STRATEJİK DÜŞÜNCE KURULUŞLARI ---
+    "THINK_TANK": [
         "https://foreignpolicy.com/feed/",
-        "https://www.csis.org/rss/analysis",  # CSIS (Center for Strategic and International Studies)
-        "https://www.setav.org/feed/",        # SETA (Türkiye Perspektifi)
-        "https://carnegieendowment.org/rss/solr/get/all", # Carnegie
-        "https://www.understandingwar.org/feeds.xml",     # ISW (Savaş Araştırmaları)
+        "https://www.csis.org/rss/analysis",          # CSIS
+        "https://www.setav.org/feed/",                # SETA
+        "https://carnegieendowment.org/rss/solr/get/all",
+        "https://www.understandingwar.org/feeds.xml", # ISW
         "https://warontherocks.com/feed/",
         "https://www.cfr.org/rss/newsletters/daily-brief"
     ],
 
-    # --- BATI BLOKU MEDYASI ---
-    "BATI_MEDYASI": [
-        "http://rss.cnn.com/rss/edition_world.rss",       # CNN International
-        "http://feeds.bbci.co.uk/news/world/rss.xml",     # BBC World
-        "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best", # Reuters
-        "https://www.voanews.com/api/z$omeovuro",         # Voice of America (VOA)
-        "https://www.dw.com/xml/rss-tur-dunya",           # Deutsche Welle
-        "https://www.france24.com/en/rss"                 # France 24
+    # --- BATI VE DOĞU MEDYA KANALLARI ---
+    "GLOBAL_MEDIA": [
+        "http://feeds.bbci.co.uk/news/world/rss.xml", # BBC
+        "http://rss.cnn.com/rss/edition_world.rss",   # CNN
+        "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best",
+        "https://www.voanews.com/api/z$omeovuro",     # VOA
+        "http://www.xinhuanet.com/english/rss/worldrss.xml", # Çin (Xinhua)
+        "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms", # Hindistan
+        "https://www.dawn.com/feeds/home",            # Pakistan
+        "https://tass.com/rss/v2.xml",                # Rusya (TASS)
+        "https://www.aljazeera.com/xml/rss/all.xml"   # Katar
     ],
 
-    # --- DOĞU VE ASYA-PASİFİK ---
-    "DOGU_MEDYASI": [
-        "http://www.chinadaily.com.cn/rss/world_rss.xml", # Çin (China Daily)
-        "http://xinhuanet.com/english/rss/worldrss.xml",  # Çin (Xinhua)
-        "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms", # Hindistan (Times of India)
-        "https://www.dawn.com/feeds/home",                # Pakistan (Dawn)
-        "https://tass.com/rss/v2.xml",                    # Rusya (TASS)
-        "https://www.aljazeera.com/xml/rss/all.xml"       # Katar/Orta Doğu (Al Jazeera)
-    ],
-
-    # --- SAHA İSTİHBARATI (TELEGRAM KÖPRÜLERİ) ---
+    # --- SAHA VE TELEGRAM ---
     "TELEGRAM": [
         "https://rsshub.app/telegram/channel/geopolitics_live",
-        "https://rsshub.app/telegram/channel/intelslava",
-        "https://rsshub.app/telegram/channel/bellincat"
+        "https://rsshub.app/telegram/channel/intelslava"
     ]
 }
 
@@ -88,11 +85,11 @@ def get_full_text(url):
     if "t.me" in url or ".pdf" in url: return None
     try:
         downloaded = trafilatura.fetch_url(url)
-        return trafilatura.extract(downloaded)[:2000] if downloaded else None
+        return trafilatura.extract(downloaded)[:2500] if downloaded else None
     except: return None
 
 def fetch_news():
-    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR...")
+    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI VE AKADEMİK VERİLER TARANIYOR...")
     
     ai_input_data = []
     reference_html_list = []
@@ -103,17 +100,14 @@ def fetch_news():
         past_content = str(response.data)
     except: past_content = ""
 
-    # Tüm kategorileri birleştir
     all_urls = []
     for category in RSS_SOURCES.values():
         all_urls.extend(category)
     
     counter = 1
-    # Kaynak sayısını artırdığımız için her kaynaktan sadece EN YENİ 1 haberi alıyoruz (Hız ve Token Tasarrufu)
     for url in all_urls:
         try:
             feed = feedparser.parse(url)
-            # Eğer feed boşsa veya hata varsa atla
             if not feed.entries: continue
 
             for entry in feed.entries[:1]: 
@@ -123,12 +117,13 @@ def fetch_news():
                     title = entry.title
                     source = feed.feed.get('title', 'Kaynak')
                     
-                    # AI Formatı
                     ai_input_data.append(f"[{counter}] SOURCE: {source} | TITLE: {title} | CONTENT: {summary}")
                     
-                    # E-posta Formatı
                     reference_html_list.append(
-                        f"<li style='margin-bottom: 5px;'><b>[{counter}]</b> <a href='{entry.link}' style='color:#2980b9; text-decoration:none;'>{title}</a> <span style='color:#7f8c8d; font-size:11px;'>— {source}</span></li>"
+                        f"<li style='margin-bottom: 8px; border-bottom: 1px dashed #eee; padding-bottom: 5px;'>"
+                        f"<b>[{counter}]</b> <a href='{entry.link}' style='color:#2980b9; text-decoration:none; font-weight:600;'>{title}</a> "
+                        f"<span style='color:#7f8c8d; font-size:11px;'>— {source}</span>"
+                        f"</li>"
                     )
                     
                     counter += 1
@@ -137,40 +132,45 @@ def fetch_news():
     return "\n\n".join(ai_input_data), "".join(reference_html_list)
 
 # ==========================================
-# 4. DOKTRİNER VE FÜTÜRİSTİK ANALİZ (AI AGENT)
+# 4. DOKTRİNER ANALİZ VE KAVRAM ÖNERİCİ (AI)
 # ==========================================
 
 def run_agent_workflow(current_data):
-    print("🧠 GELECEK SENARYOLARI OLUŞTURULUYOR...")
+    print("🧠 STRATEJİK ANALİZ VE KAVRAM TARAMASI YAPILIYOR...")
     today = datetime.datetime.now().strftime("%d %B %Y")
 
     system_prompt = f"""
-    Sen 'Küresel Savaş Odası'nın Baş Fütüristi ve Stratejistisin.
-    GÖREVİN: Aşağıdaki geniş kapsamlı (Batı, Doğu, Asya) istihbaratı kullanarak "Jeopolitik Durum Değerlendirmesi" yazmak.
+    Sen 'Küresel Savaş Odası'nın Baş Stratejisti ve Akademik Danışmanısın.
+    GÖREVİN: İstihbaratı analiz etmek ve okuyucuya bir "Jeopolitik Ders" niteliğinde rapor sunmak.
 
     **ANALİZ KURALLARI:**
-    1. **GELECEK ODAKLI:** Olayları özetleme, *sonuçlarını* yaz. (Örn: "Çin'in bu hamlesi, 6 ay içinde Tayvan Boğazı'nda ablukaya yol açabilir").
-    2. **KÜRESEL PERSPEKTİF:** Analizlerinde sadece Batı değil, Doğu (Çin, Rusya, Hindistan) perspektifini de harmanla.
-    3. **DOKTRİNER DİL:** Realizm, Güç Dengesi, Hibrit Savaş, Abundance Hareketi gibi kavramları kullan.
-    4. **ATIF SİSTEMİ:** Mutlaka `` formatını kullan.
+    1. **GELECEK ODAKLI:** Olayların *sonuçlarını* yaz. (Örn: "Bu hamle 6 ay içinde Tayvan Boğazı'nda ablukaya yol açabilir").
+    2. **KÜRESEL PERSPEKTİF:** Batı ve Doğu kaynaklarını sentezle.
+    3. **DOKTRİNER DİL:** Realizm, Güç Dengesi, Hibrit Savaş gibi kavramları kullan.
+    4. **ATIF:** Mutlaka `` formatını kullan.
+
+    **ÖZEL GÖREV (KAVRAM & MAKALE):**
+    Raporun en sonuna, bugünkü olayları (Örn: Ambargo, Vekalet Savaşı) en iyi açıklayan bir **"Uluslararası İlişkiler Kavramı"** seç. Bu kavramı kısaca tanımla ve bu konuda okunması gereken **gerçek bir akademik makale veya kitap** öner (Yazar Adı ve Eser Adı ile).
 
     **RAPOR FORMATI (HTML):**
     <div style="font-family: 'Georgia', serif; color: #222; line-height: 1.6;">
         
-        <h2 style="color:#c0392b; border-bottom: 2px solid #c0392b; padding-bottom: 5px;">I. KÜRESEL GÜÇ DENGESİ VE KIRILMALAR</h2>
-        <p>(ABD, Çin ve Rusya eksenindeki en kritik gelişmelerin stratejik analizi.)</p>
+        <h2 style="color:#c0392b; border-bottom: 2px solid #c0392b; padding-bottom: 5px;">I. KÜRESEL GÜÇ DENGESİ (ANALİZ)</h2>
+        <p>(Kritik gelişmelerin stratejik analizi.)</p>
 
-        <h2 style="color:#2980b9; border-bottom: 2px solid #2980b9; padding-bottom: 5px; margin-top:30px;">II. BÖLGESEL SENARYOLAR VE RİSKLER</h2>
-        
+        <h2 style="color:#2980b9; border-bottom: 2px solid #2980b9; padding-bottom: 5px; margin-top:30px;">II. BÖLGESEL RİSKLER & SENARYOLAR</h2>
         <h3 style="color:#2c3e50; margin-bottom: 5px;">🌏 Asya-Pasifik & Hint Altıtası</h3>
-        <p>(Çin, Hindistan ve Pakistan gelişmeleri üzerinden analiz. kullan.)</p>
-
+        <p>(Çin, Hindistan, Pakistan analizi. kullan.)</p>
         <h3 style="color:#2c3e50; margin-bottom: 5px;">🌍 Avrupa & Orta Doğu Hattı</h3>
-        <p>(Avrupa güvenliği ve Orta Doğu'daki vekalet savaşları. kullan.)</p>
+        <p>(Rusya, Ukrayna, Orta Doğu analizi. kullan.)</p>
 
-        <div style="background-color:#f8f9fa; border-left: 4px solid #27ae60; padding: 15px; margin-top: 25px; font-style: italic;">
-            <b>💡 Stratejik Öngörü:</b> (Türkiye veya Küresel Sistem için tek cümlelik, vurucu bir gelecek tahmini.)
+        <div style="background-color:#f4f6f7; border: 1px solid #d5dbdb; padding: 20px; margin-top: 40px; border-radius: 5px;">
+            <h3 style="color:#2c3e50; margin-top: 0; text-transform: uppercase; font-size: 16px;">🧠 GÜNÜN KAVRAMI VE OKUMA ÖNERİSİ</h3>
+            <p><b>🔎 Kavram:</b> (Bugünkü olayları açıklayan kavram, örn: "Security Dilemma")</p>
+            <p><b>📖 Tanım:</b> (Kavramın kısa, akademik tanımı)</p>
+            <p><b>📚 Makale/Kitap Önerisi:</b> (Yazar Adı - Eser Adı. Örn: "Robert Jervis - Cooperation Under the Security Dilemma")</p>
         </div>
+
     </div>
     """
 
@@ -179,7 +179,7 @@ def run_agent_workflow(current_data):
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"GÜNCEL KÜRESEL İSTİHBARAT:\n{current_data}"}
+                {"role": "user", "content": f"GÜNCEL İSTİHBARAT:\n{current_data}"}
             ],
             temperature=0.5
         )
@@ -229,6 +229,7 @@ def send_email(report_body, references_html, audio_file):
 
             <div style="margin-top: 50px; padding-top: 20px; border-top: 2px solid #ecf0f1;">
                 <h3 style="color: #2c3e50; font-size: 16px; text-transform: uppercase;">📚 KÜRESEL İSTİHBARAT AKIŞI (DOĞRULANMIŞ)</h3>
+                <p style="font-size: 11px; color: #7f8c8d; margin-bottom: 10px;">Aşağıdaki kaynaklar raporda atıf yapılan () verilerin orijinalleridir:</p>
                 <ol style="font-size: 13px; color: #555; padding-left: 20px; line-height: 1.8;">
                     {references_html}
                 </ol>
