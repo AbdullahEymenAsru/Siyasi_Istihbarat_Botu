@@ -4,7 +4,6 @@ import glob
 import json
 import base64
 import time 
-import shutil
 import chromadb
 from sentence_transformers import SentenceTransformer
 from groq import Groq
@@ -23,27 +22,26 @@ import re
 
 st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️", layout="wide")
 
-# -- TEMA YÖNETİMİ --
 if "theme" not in st.session_state:
     st.session_state.theme = "Karanlık"
 
 # Tema Renk Paletleri
 if st.session_state.theme == "Karanlık":
-    v_bg = "#0E1117"
-    v_text = "#FFFFFF"
-    v_sidebar = "#161B22"
-    v_chat_bg = "#1A1C24"
-    v_input_bg = "#262730"
-    v_border = "#30363D"
-    v_accent = "#4CAF50"
+    v_bg = "#0E1117"        # Derin Siyah
+    v_text = "#FFFFFF"      # Saf Beyaz
+    v_sidebar = "#161B22"   # Sidebar
+    v_chat_bg = "#1A1C24"   # Chat Balonu
+    v_input_bg = "#262730"  # Input Alanı
+    v_border = "#30363D"    # Çerçeveler
+    v_accent = "#4CAF50"    # Vurgu Yeşili
 else:
-    v_bg = "#FFFFFF"
-    v_text = "#121212"
-    v_sidebar = "#F8F9FA"
-    v_chat_bg = "#F0F2F6"
-    v_input_bg = "#FFFFFF"
-    v_border = "#DCDDE1"
-    v_accent = "#2E7D32"
+    v_bg = "#FFFFFF"        # Beyaz
+    v_text = "#121212"      # Koyu Siyah
+    v_sidebar = "#F8F9FA"   # Açık Gri Sidebar
+    v_chat_bg = "#F0F2F6"   # Açık Gri Chat
+    v_input_bg = "#FFFFFF"  # Beyaz Input
+    v_border = "#DCDDE1"    # Gri Çerçeve
+    v_accent = "#2E7D32"    # Koyu Yeşil
 
 # Nihai CSS
 st.markdown(f"""
@@ -99,19 +97,17 @@ if "GROQ_API_KEY" not in st.secrets or "SUPABASE_URL" not in st.secrets:
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-for folder in ["ARSIV", "VEKTOR_DB"]:
-    if not os.path.exists(folder): os.makedirs(folder)
+# Klasör Kontrolü (Sadece ARSIV yeterli, VEKTOR_DB artık RAM'de)
+if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
 
 # ==========================================
 # 2. ÇEKİRDEK FONKSİYONLAR
 # ==========================================
 
-# --- GÜNCELLENMİŞ EMBEDDING SINIFI (HATA DÜZELTİCİ) ---
 class YerelEmbedder:
     def __init__(self):
         self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
-        # ChromaDB'nin aradığı kimlik kartı burası:
-        self.name = "YerelEmbedder" 
+        self.name = "YerelEmbedder" # ChromaDB Kimlik Hatası Çözümü
 
     def __call__(self, input):
         return self.model.encode(input).tolist()
@@ -163,36 +159,37 @@ def buluta_kaydet(user_id, data, password):
     encrypted = sifrele(data, password)
     if encrypted: supabase.table("chat_logs").upsert({"user_id": user_id, "messages": {"encrypted_data": encrypted}}, on_conflict="user_id").execute()
 
+# --- EPHEMERAL (RAM) HAFIZA SİSTEMİ ---
+# PersistentClient yerine EphemeralClient kullanıyoruz.
+# Bu sayede diske yazma izni gerekmez, hata çözülür.
 @st.cache_resource
-def get_chroma(): return chromadb.PersistentClient(path="VEKTOR_DB")
+def get_chroma(): return chromadb.EphemeralClient() 
+
 @st.cache_resource
 def get_embedder(): return YerelEmbedder()
 
-# --- GÜNCELLENMİŞ HAFIZA FONKSİYONU (v3 TEMİZ BAŞLANGIÇ) ---
 def hafizayi_guncelle():
     try:
         chroma = get_chroma()
         ef = get_embedder()
-        # İsim çakışmasını önlemek için veritabanı adını 'v3' yaptık
-        col = chroma.get_or_create_collection(name="savas_odasi_v3", embedding_function=ef)
+        # Ephemeral olduğu için her seferinde oluşturması sorun değil, hızlıdır.
+        col = chroma.get_or_create_collection(name="savas_odasi_ram", embedding_function=ef)
         
+        # Dosyaları RAM'e yükle
         for d in glob.glob("ARSIV/*.md"):
             try:
                 adi = os.path.basename(d)
+                # RAM'de zaten varsa atla
                 if not col.get(ids=[adi])['ids']:
                     with open(d, "r", encoding="utf-8") as f: 
                         col.add(documents=[f.read()], ids=[adi], metadatas=[{"source": adi}])
             except: pass
     except Exception as e:
-        # Eğer çok kritik bir hata olursa klasörü temizle (Hard Reset)
-        if os.path.exists("VEKTOR_DB"):
-            shutil.rmtree("VEKTOR_DB")
-            os.makedirs("VEKTOR_DB")
-        st.error(f"Hafıza tazelendi (Reset): {e}")
+        st.error(f"Hafıza Modülü Hatası: {e}")
 
 def hafizadan_getir(soru):
     try:
-        res = get_chroma().get_collection(name="savas_odasi_v3", embedding_function=get_embedder()).query(query_texts=[soru], n_results=3)
+        res = get_chroma().get_collection(name="savas_odasi_ram", embedding_function=get_embedder()).query(query_texts=[soru], n_results=3)
         return "\n".join(res['documents'][0]) if res['documents'] else "Arşivde veri yok."
     except: return "Hafıza verisi yok."
 
@@ -244,6 +241,10 @@ if not st.session_state.user and not st.session_state.is_guest:
                 if d: st.session_state.chat_sessions = d; st.session_state.current_session_name = list(d.keys())[0]
                 st.rerun()
         
+        with st.expander("Şifremi Unuttum"):
+            rm = st.text_input("Mail Adresi")
+            if st.button("Sıfırlama Gönder"): sifre_sifirla(rm)
+
         with st.expander("Yeni Kayıt"):
             ne = st.text_input("Yeni E-posta", key="ne")
             np = st.text_input("Yeni Şifre", type="password", key="np")
@@ -289,9 +290,9 @@ if st.sidebar.button("🗑️ İmha Et"):
 
 if st.sidebar.button("Çıkış"): st.session_state.clear(); st.rerun()
 
-# --- RAPOR DEĞİŞKENLERİ (HATA ÖNLEYİCİ) ---
+# --- RAPOR SEÇİMİ ---
 rep = "Veri Yok"
-secilen_icerik = "Rapor bulunamadı."
+secilen_icerik = "Görüntülenecek rapor bulunamadı."
 try:
     dosyalar = glob.glob("ARSIV/*.md")
     dosyalar.sort(key=os.path.getmtime, reverse=True)
@@ -316,7 +317,7 @@ with col_sol:
         c = re.sub(r"```html|```", "", secilen_icerik)
         components.html(c, height=1000, scrolling=True)
     else:
-        st.info("Arşivde görüntülenecek rapor bulunamadı.")
+        st.info(secilen_icerik)
 
 # SAĞ: CHAT
 with col_sag:
@@ -333,6 +334,9 @@ with col_sag:
         with chat_container:
             with st.chat_message("user"): st.markdown(q)
         
+        if not st.session_state.is_guest:
+             buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
+
         with st.status("Veriler analiz ediliyor...") as s:
             arsiv = hafizadan_getir(q)
             web = web_ara(q)
@@ -340,8 +344,7 @@ with col_sag:
         
         with chat_container:
             with st.chat_message("assistant"):
-                ph = st.empty()
-                full = ""
+                ph, full = st.empty(), ""
                 sys_msg = {"role": "system", "content": "Sen Savaş Odası stratejistisin. Raporu ve verileri kullanarak derin analiz yap."}
                 enhanced_q = {"role": "user", "content": f"SORU: {q}\n\n[ARŞİV]:\n{arsiv}\n\n[WEB]:\n{web}"}
                 
