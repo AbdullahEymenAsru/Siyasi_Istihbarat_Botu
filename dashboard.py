@@ -19,17 +19,87 @@ import streamlit.components.v1 as components
 import re 
 
 # ==========================================
-# 1. AYARLAR & KURULUM
+# 1. AYARLAR, TEMA & CSS
 # ==========================================
 
 st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️", layout="wide")
 
-# CSS ile Askeri Tema
-st.markdown("""
+# -- TEMA YÖNETİMİ --
+if "theme" not in st.session_state:
+    st.session_state.theme = "Karanlık"
+
+# Tema Renk Paleti
+if st.session_state.theme == "Karanlık":
+    bg_color = "#0E1117"
+    text_color = "#E0E0E0"
+    chat_user_bg = "#262730"
+    chat_bot_bg = "#1A1C24"
+    input_bg = "#262730"
+    border_color = "#4CAF50"
+    accent_color = "#4CAF50"
+else:
+    bg_color = "#FFFFFF"
+    text_color = "#1A1A1A"
+    chat_user_bg = "#E8F5E9" # Açık Yeşil
+    chat_bot_bg = "#F0F2F6"  # Açık Gri
+    input_bg = "#FFFFFF"
+    border_color = "#2E7D32"
+    accent_color = "#2E7D32"
+
+# Dinamik CSS Entegrasyonu
+st.markdown(f"""
 <style>
-.stChatMessage { border-radius: 10px; padding: 10px; }
-.stButton button { width: 100%; border-radius: 5px; }
-.stTextInput input { border: 1px solid #4CAF50; }
+    /* Ana Sayfa Yapısı */
+    .stApp {{
+        background-color: {bg_color};
+        color: {text_color};
+    }}
+    
+    /* Mesaj Kutuları (Chat) */
+    .stChatMessage {{
+        background-color: {chat_bot_bg};
+        border: 1px solid {border_color}33; /* %33 Saydamlık */
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 10px;
+        color: {text_color};
+    }}
+    
+    /* Kullanıcı Mesajı İçin Özel Renk (Streamlit DOM yapısına göre genelleme) */
+    div[data-testid="stChatMessage"] {{
+        background-color: {chat_bot_bg};
+    }}
+
+    /* Input Alanları */
+    .stTextInput input, .stTextArea textarea, .stSelectbox div {{
+        background-color: {input_bg} !important;
+        color: {text_color} !important;
+        border: 1px solid {border_color} !important;
+    }}
+    
+    /* Butonlar */
+    .stButton button {{
+        background-color: {accent_color} !important;
+        color: white !important;
+        border-radius: 5px;
+        font-weight: bold;
+        border: none;
+    }}
+    .stButton button:hover {{
+        opacity: 0.8;
+        border: 1px solid {text_color} !important;
+    }}
+
+    /* Sidebar */
+    [data-testid="stSidebar"] {{
+        background-color: {"#161B22" if st.session_state.theme == "Karanlık" else "#F8F9FA"} !important;
+        border-right: 1px solid {border_color}33;
+    }}
+
+    /* Başlıklar */
+    h1, h2, h3 {{
+        color: {accent_color} !important;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -332,6 +402,15 @@ else:
 
 # -- SIDEBAR: OTURUM YÖNETİMİ ---
 st.sidebar.markdown("---")
+
+# TEMA DEĞİŞTİRİCİ (EN ÜSTTE)
+st.sidebar.header("⚙️ SİSTEM AYARLARI")
+curr_theme = st.session_state.theme
+new_theme = st.sidebar.radio("Görünüm Modu", ["Karanlık", "Açık"], index=0 if curr_theme=="Karanlık" else 1)
+if new_theme != curr_theme:
+    st.session_state.theme = new_theme
+    st.rerun()
+
 st.sidebar.header("🗄️ Operasyon Kayıtları")
 
 # Yeni Sohbet Ekleme
