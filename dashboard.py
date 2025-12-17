@@ -21,7 +21,7 @@ import re
 # 1. AYARLAR, TEMA VE CSS
 # ==========================================
 
-st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Savaş Odası HQ", page_icon="🛡️", layout="wide")
 
 if "theme" not in st.session_state:
     st.session_state.theme = "Karanlık"
@@ -36,7 +36,7 @@ else:
     v_chat_bg, v_input_bg = "#F0F2F6", "#FFFFFF"
     v_border, v_accent = "#DCDDE1", "#2E7D32"
 
-# CSS
+# CSS - Görsel Etiketler ve Düzen
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {v_bg} !important; color: {v_text} !important; }}
@@ -55,6 +55,21 @@ st.markdown(f"""
     a {{ color: {v_accent} !important; text-decoration: none; }}
     .stHtmlContainer {{ color: {v_text} !important; background-color: transparent !important; }}
     svg {{ fill: {v_text} !important; }}
+    
+    /* Model Etiketi Tasarımı */
+    .model-tag {{
+        font-size: 10px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        padding: 3px 8px;
+        border-radius: 4px;
+        background: {v_accent}; 
+        color: white;
+        margin-bottom: 5px;
+        display: inline-block;
+        text-transform: uppercase;
+        border: 1px solid rgba(255,255,255,0.2);
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -65,10 +80,10 @@ if "GROQ_API_KEY" not in st.secrets or "SUPABASE_URL" not in st.secrets:
     st.error("API Anahtarları Eksik!")
     st.stop()
 
-# Çift Mühimmat Hattı (Anahtarlar)
+# Çift Mühimmat Hattı
 GROQ_KEYS = [
     st.secrets.get("GROQ_API_KEY"),
-    st.secrets.get("GROQ_API_KEY_2") # Yedek Anahtar
+    st.secrets.get("GROQ_API_KEY_2")
 ]
 
 supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -79,16 +94,13 @@ if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
 # 2. ÇEKİRDEK FONKSİYONLAR
 # ==========================================
 
-# --- ROTASYONEL AI MOTORU ---
 def ask_ai_with_rotation(messages, model_id):
     """
-    Seçilen model ile API çağrısı yapar. 
-    Eğer aktif anahtarın kotası dolarsa (429), otomatik olarak yedeğe geçer.
+    Seçilen model ile API çağrısı yapar. Kota dolarsa yedeğe geçer.
     """
     for i, key in enumerate(GROQ_KEYS):
-        if not key: continue # Anahtar tanımlı değilse atla
+        if not key: continue
         try:
-            # Geçici istemci oluştur
             temp_client = Groq(api_key=key)
             return temp_client.chat.completions.create(
                 model=model_id,
@@ -96,14 +108,13 @@ def ask_ai_with_rotation(messages, model_id):
                 stream=True
             )
         except Exception as e:
-            if "429" in str(e): # Kota Doldu Hatası
+            if "429" in str(e): # Kota Doldu
                 st.toast(f"⚠️ {i+1}. Mühimmat Hattı Tükendi, Yedek Hatta Geçiliyor...", icon="🔄")
-                continue # Döngüdeki bir sonraki anahtara geç
+                continue
             else:
                 st.error(f"Sistem Hatası: {e}")
                 return None
-    
-    st.error("❌ Kritik: Tüm mühimmat (API Anahtarları) tükendi! Yeni anahtar ekleyin.")
+    st.error("❌ Kritik: Tüm API mühimmatı tükendi!")
     return None
 
 class YerelEmbedder:
@@ -156,7 +167,6 @@ def buluttan_yukle(user_id, password):
     except: return {}
 
 def buluta_kaydet(user_id, data, password, sessiz=False):
-    """Veriyi şifreler ve buluta zorla yazar."""
     try:
         sifreli = sifrele(data, password)
         if sifreli:
@@ -164,12 +174,10 @@ def buluta_kaydet(user_id, data, password, sessiz=False):
                 {"user_id": user_id, "messages": {"encrypted_data": sifreli}}, 
                 on_conflict="user_id"
             ).execute()
-            if not sessiz:
-                st.toast("✅ Veriler Buluta Senkronize Edildi", icon="☁️")
+            if not sessiz: st.toast("✅ Veriler Senkronize Edildi", icon="☁️")
     except Exception as e: 
         if not sessiz: st.error(f"Kayıt Hatası: {e}")
 
-# --- EPHEMERAL HAFIZA (v4) ---
 @st.cache_resource
 def get_chroma_v4(): return chromadb.EphemeralClient()
 @st.cache_resource
@@ -192,14 +200,14 @@ def hafizayi_guncelle():
 def hafizadan_getir(soru):
     try:
         res = get_chroma_v4().get_collection(name="savas_odasi_ram_v4", embedding_function=get_embedder_v4()).query(query_texts=[soru], n_results=3)
-        return "\n".join(res['documents'][0]) if res['documents'] else "Arşivde veri yok."
-    except: return "Hafıza verisi yok."
+        return "\n".join(res['documents'][0]) if res['documents'] else ""
+    except: return ""
 
 def web_ara(soru):
     try:
         res = DDGS().text(keywords=soru, region='tr-tr', max_results=3)
         return "\n".join([f"- {r['title']}: {r['body']}" for r in res])
-    except: return "Web arama hatası."
+    except: return ""
 
 # ==========================================
 # 3. UYGULAMA AKIŞI
@@ -210,6 +218,7 @@ if "is_guest" not in st.session_state: st.session_state.is_guest = False
 if "password_cache" not in st.session_state: st.session_state.password_cache = None
 if "chat_sessions" not in st.session_state: st.session_state.chat_sessions = {"Genel Strateji": []}
 if "current_session_name" not in st.session_state: st.session_state.current_session_name = "Genel Strateji"
+if "model_mode" not in st.session_state: st.session_state.model_mode = "deep" # Varsayılan: Derin
 
 # --- GİRİŞ ---
 if not st.session_state.user and not st.session_state.is_guest:
@@ -252,31 +261,47 @@ if not st.session_state.user and not st.session_state.is_guest:
         if st.button("Devam Et >>"): st.session_state.is_guest = True; st.rerun()
     st.stop()
 
-# --- SIDEBAR ---
+# --- SIDEBAR: ARŞİV VE AYARLAR ---
 user_id = st.session_state.user.id if st.session_state.user else "guest"
 user_pass = st.session_state.password_cache
 
-st.sidebar.header("⚙️ OPERASYONEL AYARLAR")
-
-# AI MODEL SEÇİMİ
-model_secimi = st.sidebar.radio(
-    "Analiz Birimi Seçin:",
-    [
-        "🚀 HIZLI (Llama 8B) - Az Token",
-        "🧠 KAPSAMLI (Llama 70B) - Derin Analiz"
-    ],
-    index=1,
-    help="Hızlı model anlık sorgular, Kapsamlı model detaylı raporlar içindir."
-)
-selected_model_id = "llama-3.1-8b-instant" if "HIZLI" in model_secimi else "llama-3.3-70b-versatile"
-
-st.sidebar.divider()
+st.sidebar.header("⚙️ SİSTEM")
 st_theme = st.sidebar.selectbox("Görünüm", ["Karanlık", "Açık"], index=0 if st.session_state.theme=="Karanlık" else 1, key="st")
 if st_theme != st.session_state.theme: st.session_state.theme = st_theme; st.rerun()
 
-st.sidebar.header("🗄️ Arşiv Yönetimi")
+st.sidebar.divider()
 
-# 1. YENİ SOHBET
+# --- YENİLENEN ARŞİV ARAMA MODÜLÜ ---
+st.sidebar.header("🗄️ İSTİHBARAT KÜTÜPHANESİ")
+search_query = st.sidebar.text_input("🔍 Raporlarda Ara", "", placeholder="Tarih veya konu...")
+
+dosyalar = glob.glob("ARSIV/*.md")
+dosyalar.sort(key=os.path.getmtime, reverse=True)
+
+if search_query:
+    filtreli_dosyalar = [f for f in dosyalar if search_query.lower() in f.lower()]
+else:
+    filtreli_dosyalar = dosyalar
+
+rep = "Veri Yok"
+secilen_icerik = "Görüntülenecek rapor bulunamadı."
+
+if filtreli_dosyalar:
+    # Dosya isimlerini temizleyerek göster
+    dosya_map = {os.path.basename(f).replace(".md", "").replace("_", " "): f for f in filtreli_dosyalar}
+    secilen_isim = st.sidebar.selectbox("Mevcut Kayıtlar", list(dosya_map.keys()))
+    
+    if secilen_isim:
+        try:
+            with open(dosya_map[secilen_isim], "r", encoding="utf-8") as f: secilen_icerik = f.read()
+            rep = secilen_isim
+        except: pass
+else:
+    st.sidebar.caption("Kriterlere uygun kayıt bulunamadı.")
+
+st.sidebar.divider()
+st.sidebar.header("💬 SOHBET YÖNETİMİ")
+
 if st.sidebar.button("➕ YENİ SOHBET"):
     n = f"Op_{datetime.now().strftime('%H%M%S')}"
     st.session_state.chat_sessions[n] = []
@@ -286,20 +311,9 @@ if st.sidebar.button("➕ YENİ SOHBET"):
     st.rerun()
 
 sess = list(st.session_state.chat_sessions.keys())
-sel = st.sidebar.selectbox("Geçmiş Sohbetler", sess, index=sess.index(st.session_state.current_session_name))
+sel = st.sidebar.selectbox("Geçmiş", sess, index=sess.index(st.session_state.current_session_name))
 if sel != st.session_state.current_session_name: st.session_state.current_session_name = sel; st.rerun()
 
-# 2. İSİM DEĞİŞTİRME
-new_n = st.sidebar.text_input("İsim Değiştir", value=st.session_state.current_session_name)
-if new_n != st.session_state.current_session_name and new_n:
-    data = st.session_state.chat_sessions.pop(st.session_state.current_session_name)
-    st.session_state.chat_sessions[new_n] = data
-    st.session_state.current_session_name = new_n
-    if not st.session_state.is_guest: 
-        buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
-    st.rerun()
-
-# --- SOHBET SIFIRLAMA ---
 if st.sidebar.button("🗑️ İmha Et"):
     current = st.session_state.current_session_name
     if len(st.session_state.chat_sessions) > 1:
@@ -307,7 +321,7 @@ if st.sidebar.button("🗑️ İmha Et"):
         st.session_state.current_session_name = list(st.session_state.chat_sessions.keys())[0]
     else:
         st.session_state.chat_sessions[current] = [] 
-        st.toast("Kayıtlar yakıldı, sayfa temizlendi.", icon="🔥")
+        st.toast("Kayıtlar yakıldı.", icon="🔥")
     
     if not st.session_state.is_guest: 
         buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
@@ -315,94 +329,80 @@ if st.sidebar.button("🗑️ İmha Et"):
 
 if st.sidebar.button("Çıkış"): st.session_state.clear(); st.rerun()
 
-# --- GELİŞMİŞ RAPOR ARAMA SİSTEMİ (DÜZENLİ ARŞİV) ---
-rep = "Veri Yok"
-secilen_icerik = "Görüntülenecek rapor bulunamadı."
-
-try:
-    st.sidebar.divider()
-    st.sidebar.subheader("📂 İstihbarat Kütüphanesi")
-    
-    # 1. Arama Çubuğu
-    search_query = st.sidebar.text_input("🔍 Raporlarda Ara", "", placeholder="Tarih veya kelime...")
-    
-    # 2. Tüm dosyaları çek
-    dosyalar = glob.glob("ARSIV/*.md")
-    # Yeniden eskiye sırala
-    dosyalar.sort(key=os.path.getmtime, reverse=True)
-    
-    # 3. Filtreleme
-    if search_query:
-        filtreli_dosyalar = [f for f in dosyalar if search_query.lower() in f.lower()]
-    else:
-        filtreli_dosyalar = dosyalar
-        
-    # 4. Temiz Liste Gösterimi (Dropdown)
-    if filtreli_dosyalar:
-        # Dosya yollarını temiz isimlere çevirerek göster
-        dosya_isimleri = {os.path.basename(f).replace(".md", "").replace("_", " "): f for f in filtreli_dosyalar}
-        secilen_isim = st.sidebar.selectbox("Mevcut Raporlar", list(dosya_isimleri.keys()))
-        rep_path = dosya_isimleri[secilen_isim]
-        
-        # Seçilen raporu oku
-        try:
-            with open(rep_path, "r", encoding="utf-8") as f: secilen_icerik = f.read()
-            rep = secilen_isim # Başlık için
-        except: pass
-    else:
-        st.sidebar.warning("Kriterlere uygun rapor bulunamadı.")
-        
-except Exception as e: st.sidebar.error(f"Arşiv Hatası: {e}")
-
 # --- ANA EKRAN ---
 st.title("☁️ KÜRESEL SAVAŞ ODASI")
-with st.spinner("İstihbarat Hazırlanıyor..."): hafizayi_guncelle()
+with st.spinner("Sistem Hazırlanıyor..."): hafizayi_guncelle()
 
 col_sol, col_sag = st.columns([55, 45], gap="medium")
 
-# SOL: RAPOR
+# SOL: RAPOR GÖRÜNTÜLEME
 with col_sol:
-    st.subheader(f"📄 Rapor: {rep}")
+    st.subheader(f"📄 Dosya: {rep}")
     if rep != "Veri Yok":
         c = re.sub(r"```html|```", "", secilen_icerik)
-        components.html(c, height=1000, scrolling=True)
+        components.html(c, height=900, scrolling=True)
     else:
-        st.info("Arşivden bir rapor seçin veya arama yapın.")
+        st.info("İstihbarat kütüphanesinden bir dosya seçin veya arama yapın.")
 
-# SAĞ: CHAT
+# SAĞ: ANALİZ VE KOMUTA MERKEZİ
 with col_sag:
-    st.subheader(f"🧠 Kanal: {st.session_state.current_session_name}")
-    chat_container = st.container(height=850)
+    st.markdown("### 🧠 ANALİZ BİRİMİ KOMUTASI")
+    
+    # --- YENİ MODEL SEÇİM PANELİ (ÜSTTE) ---
+    m_col1, m_col2 = st.columns(2)
+    with m_col1:
+        st.info("**⚡ SERİ MÜDAHALE**\n\nHızlı yanıt, az tüketim. Günlük işler için.")
+        if st.button("🚀 Modu Aktif Et", key="btn_fast", use_container_width=True):
+            st.session_state.model_mode = "fast"
+            st.toast("Hızlı Moda Geçildi.")
+            
+    with m_col2:
+        st.success("**🔬 DERİN STRATEJİ**\n\nDetaylı analiz, yüksek tüketim. Kritik kararlar için.")
+        if st.button("🧠 Modu Aktif Et", key="btn_deep", use_container_width=True):
+            st.session_state.model_mode = "deep"
+            st.toast("Derin Strateji Moduna Geçildi.")
+
+    # Seçili moda göre model ID belirle
+    selected_model_id = "llama-3.1-8b-instant" if st.session_state.model_mode == "fast" else "llama-3.3-70b-versatile"
+    current_label = "⚡ SERİ MÜDAHALE" if st.session_state.model_mode == "fast" else "🔬 DERİN STRATEJİ"
+    
+    st.caption(f"Aktif Birim: **{current_label}**")
+    st.divider()
+
+    st.subheader(f"📡 Kanal: {st.session_state.current_session_name}")
+    chat_container = st.container(height=650)
     msgs = st.session_state.chat_sessions[st.session_state.current_session_name]
     
     with chat_container:
         for m in msgs:
+            # Görsel Etiket: Hangi model kullanıldı?
+            if m["role"] == "assistant" and "mode" in m:
+                st.markdown(f"<div class='model-tag'>{m['mode']}</div>", unsafe_allow_html=True)
             with st.chat_message(m["role"]): st.markdown(m["content"])
 
     # 4. MESAJ GÖNDERME
     if q := st.chat_input("Analiz emredin..."):
         msgs.append({"role": "user", "content": q})
-        with chat_container:
-            with st.chat_message("user"): st.markdown(q)
+        chat_container.chat_message("user").markdown(q)
         
         if not st.session_state.is_guest: 
             buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass, sessiz=True)
 
-        with st.status(f"Analiz ediliyor ({'Hızlı' if '8B' in selected_model_id else 'Kapsamlı'} Model)...") as s:
+        with st.status("Veriler işleniyor...") as s:
             arsiv = hafizadan_getir(q)
             web = web_ara(q)
-            s.update(label="Stratejik yanıt hazırlanıyor...", state="complete")
+            s.update(label="Stratejik yanıt oluşturuluyor...", state="complete")
         
         with chat_container:
             with st.chat_message("assistant"):
                 ph, full = st.empty(), ""
-                sys_msg = {"role": "system", "content": "Sen Savaş Odası stratejistisin. Raporu ve verileri kullanarak derin analiz yap."}
+                sys_msg = {"role": "system", "content": "Sen Savaş Odası stratejistisin. Raporu ve verileri kullanarak doktriner analiz yap."}
                 enhanced_q = {"role": "user", "content": f"SORU: {q}\n\n[ARŞİV]:\n{arsiv}\n\n[WEB]:\n{web}"}
                 
-                # --- ROTASYONEL FONKSİYON VE SEÇİLEN MODEL ---
+                # Çift API Rotasyonu ile Çağrı
                 try:
                     stream = ask_ai_with_rotation(
-                        [sys_msg] + msgs[-10:-1] + [enhanced_q], 
+                        [sys_msg] + msgs[-8:-1] + [enhanced_q], 
                         model_id=selected_model_id
                     )
                     
@@ -412,9 +412,11 @@ with col_sag:
                                 full += chunk.choices[0].delta.content
                                 ph.markdown(full + "▌")
                         ph.markdown(full)
-                        msgs.append({"role": "assistant", "content": full})
+                        
+                        # Mod etiketiyle kaydet
+                        msgs.append({"role": "assistant", "content": full, "mode": current_label})
                         
                         if not st.session_state.is_guest: 
                             buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
                 except Exception as e:
-                    st.error(f"Kritik Hata: {e}")
+                    st.error(f"Operasyon Hatası: {e}")
