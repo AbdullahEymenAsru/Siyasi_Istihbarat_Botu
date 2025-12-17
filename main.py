@@ -15,16 +15,22 @@ from email.mime.base import MIMEBase
 from email import encoders
 
 # ==========================================
-# 1. AYARLAR & GÜVENLİK
+# 1. AYARLAR & API ROTASYON SİSTEMİ
 # ==========================================
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# Sistem iki farklı hesabı sırayla dener. Biri biterse diğeri devreye girer.
+GROQ_KEYS = [
+    os.environ.get("GROQ_API_KEY"),   # Birinci hesap (100k Token)
+    os.environ.get("GROQ_API_KEY_2")  # Yeni oluşturduğunuz ikinci hesap (100k Token)
+]
+
 GMAIL_USER = os.environ.get("GMAIL_USER")
 GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-client = Groq(api_key=GROQ_API_KEY)
+# Client başlatma (ilk anahtar ile varsayılan olarak)
+client = Groq(api_key=GROQ_KEYS[0])
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 
@@ -46,7 +52,6 @@ ALICI_LISTESI = get_email_list()
 # ==========================================
 
 RSS_SOURCES = {
-    # STRATEJİK DÜŞÜNCE KURULUŞLARI
     "STRATEJIK": [
         "https://foreignpolicy.com/feed/",
         "https://www.csis.org/rss/analysis",
@@ -55,7 +60,6 @@ RSS_SOURCES = {
         "https://www.cfr.org/rss/newsletters/daily-brief",
         "https://www.setav.org/feed/"
     ],
-    # BATI MEDYASI
     "BATI": [
         "http://feeds.bbci.co.uk/news/world/rss.xml",
         "http://rss.cnn.com/rss/edition_world.rss",
@@ -63,7 +67,6 @@ RSS_SOURCES = {
         "https://www.voanews.com/api/z$omeovuro",
         "https://www.france24.com/en/rss"
     ],
-    # DOĞU VE ASYA MEDYASI
     "DOGU": [
         "http://www.xinhuanet.com/english/rss/worldrss.xml", # Çin
         "http://www.chinadaily.com.cn/rss/world_rss.xml",
@@ -72,7 +75,6 @@ RSS_SOURCES = {
         "https://tass.com/rss/v2.xml",                # Rusya
         "https://www.aljazeera.com/xml/rss/all.xml"   # Orta Doğu
     ],
-    # SAHA İSTİHBARATI
     "TELEGRAM": [
         "https://rsshub.app/telegram/channel/geopolitics_live",
         "https://rsshub.app/telegram/channel/intelslava"
@@ -134,11 +136,11 @@ def fetch_news():
     return "\n\n".join(ai_input_data), "".join(reference_html_list)
 
 # ==========================================
-# 4. DOKTRİNER ANALİZ (ESKİ & DETAYLI FORMAT)
+# 4. ANALİZ (ROTASYONEL DOKTRİNER MOTOR)
 # ==========================================
 
 def run_agent_workflow(current_data):
-    print("🧠 STRATEJİK ANALİZ VE TASARIM OLUŞTURULUYOR...")
+    print("🧠 STRATEJİK ANALİZ VE TASARIM OLUŞTURULUYOR (ROTASYON AKTİF)...")
     
     system_prompt = f"""
     Sen 'Küresel Savaş Odası'nın Baş Stratejistisin.
@@ -187,18 +189,27 @@ def run_agent_workflow(current_data):
     </div>
     """
 
-    try:
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"İSTİHBARAT VERİLERİ:\n{current_data}"}
-            ],
-            temperature=0.4
-        )
-        return completion.choices[0].message.content
-    except Exception as e:
-        return f"<p>Analiz hatası: {e}</p>"
+    # --- ROTASYON MANTIĞI: 1. KEY BİTERSE 2. KEY'E GEÇER ---
+    for i, key in enumerate(GROQ_KEYS):
+        if not key: continue
+        try:
+            temp_client = Groq(api_key=key)
+            completion = temp_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"İSTİHBARAT VERİLERİ:\n{current_data}"}
+                ],
+                temperature=0.4
+            )
+            return completion.choices[0].message.content
+        except Exception as e:
+            if "429" in str(e): # Kota aşımı hatası tespit edilirse
+                print(f"⚠️ {i+1}. API Hattı Dolu, Yedek Hatta Geçiliyor...")
+                continue
+            return f"<p>AI Analiz Hatası: {e}</p>"
+    
+    return "<p>❌ Tüm API kotaları tükendi. Operasyon durduruldu.</p>"
 
 # ==========================================
 # 5. SES & ARŞİV & DAĞITIM
@@ -206,7 +217,7 @@ def run_agent_workflow(current_data):
 
 async def generate_voice(text, output_file):
     communicate = edge_tts.Communicate(text, SES_MODELI)
-    await communicate.save(output_file)
+    await asyncio.wait_for(communicate.save(output_file), timeout=60)
 
 def create_audio_summary(report_html):
     print("🎙️ Sesli özet hazırlanıyor...")
@@ -291,20 +302,25 @@ if __name__ == "__main__":
         audio = create_audio_summary(report_html)
         
         try:
+            # Raporun veritabanına kaydı
             supabase.table("reports").insert({"content": report_html}).execute()
             
+            # Yerel Arşivleme
             file_name = f"ARSIV/Rapor_{datetime.datetime.now().strftime('%Y-%m-%d')}.md"
             if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
             with open(file_name, "w", encoding="utf-8") as f:
                 f.write(report_html + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html_list + "</ul>")
             
+            # Git işlemleri
             subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"], capture_output=True)
             subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"], capture_output=True)
             subprocess.run(["git", "add", file_name], capture_output=True)
             subprocess.run(["git", "commit", "-m", "Rapor"], capture_output=True)
             subprocess.run(["git", "push"], capture_output=True)
-        except: pass
+        except Exception as e:
+            print(f"⚠️ Arşivleme/Git Hatası: {e}")
 
+        # E-posta Dağıtımı
         send_email(report_html, ref_html_list, audio)
     else:
         print("⚠️ Yeterli yeni veri bulunamadı.")
