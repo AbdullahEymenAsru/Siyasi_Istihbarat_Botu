@@ -79,7 +79,7 @@ if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
 # 2. ÇEKİRDEK FONKSİYONLAR
 # ==========================================
 
-# --- YENİ: ROTASYONEL AI MOTORU ---
+# --- ROTASYONEL AI MOTORU ---
 def ask_ai_with_rotation(messages, model_id):
     """
     Seçilen model ile API çağrısı yapar. 
@@ -258,7 +258,7 @@ user_pass = st.session_state.password_cache
 
 st.sidebar.header("⚙️ OPERASYONEL AYARLAR")
 
-# --- YENİ EKLENTİ: AI MODEL SEÇİMİ ---
+# AI MODEL SEÇİMİ
 model_secimi = st.sidebar.radio(
     "Analiz Birimi Seçin:",
     [
@@ -268,14 +268,13 @@ model_secimi = st.sidebar.radio(
     index=1,
     help="Hızlı model anlık sorgular, Kapsamlı model detaylı raporlar içindir."
 )
-# Model ID Belirleme
 selected_model_id = "llama-3.1-8b-instant" if "HIZLI" in model_secimi else "llama-3.3-70b-versatile"
 
 st.sidebar.divider()
 st_theme = st.sidebar.selectbox("Görünüm", ["Karanlık", "Açık"], index=0 if st.session_state.theme=="Karanlık" else 1, key="st")
 if st_theme != st.session_state.theme: st.session_state.theme = st_theme; st.rerun()
 
-st.sidebar.header("🗄️ Kayıtlar")
+st.sidebar.header("🗄️ Arşiv Yönetimi")
 
 # 1. YENİ SOHBET
 if st.sidebar.button("➕ YENİ SOHBET"):
@@ -287,7 +286,7 @@ if st.sidebar.button("➕ YENİ SOHBET"):
     st.rerun()
 
 sess = list(st.session_state.chat_sessions.keys())
-sel = st.sidebar.selectbox("Geçmiş", sess, index=sess.index(st.session_state.current_session_name))
+sel = st.sidebar.selectbox("Geçmiş Sohbetler", sess, index=sess.index(st.session_state.current_session_name))
 if sel != st.session_state.current_session_name: st.session_state.current_session_name = sel; st.rerun()
 
 # 2. İSİM DEĞİŞTİRME
@@ -303,11 +302,9 @@ if new_n != st.session_state.current_session_name and new_n:
 # --- SOHBET SIFIRLAMA ---
 if st.sidebar.button("🗑️ İmha Et"):
     current = st.session_state.current_session_name
-    # Eğer birden fazla sohbet varsa, sil ve diğerine geç
     if len(st.session_state.chat_sessions) > 1:
         del st.session_state.chat_sessions[current]
         st.session_state.current_session_name = list(st.session_state.chat_sessions.keys())[0]
-    # Eğer tek sohbet kaldıysa, İÇİNİ BOŞALT (Resetle) ama anahtarı silme
     else:
         st.session_state.chat_sessions[current] = [] 
         st.toast("Kayıtlar yakıldı, sayfa temizlendi.", icon="🔥")
@@ -318,19 +315,44 @@ if st.sidebar.button("🗑️ İmha Et"):
 
 if st.sidebar.button("Çıkış"): st.session_state.clear(); st.rerun()
 
-# --- RAPOR SEÇİMİ ---
+# --- GELİŞMİŞ RAPOR ARAMA SİSTEMİ (DÜZENLİ ARŞİV) ---
 rep = "Veri Yok"
 secilen_icerik = "Görüntülenecek rapor bulunamadı."
+
 try:
+    st.sidebar.divider()
+    st.sidebar.subheader("📂 İstihbarat Kütüphanesi")
+    
+    # 1. Arama Çubuğu
+    search_query = st.sidebar.text_input("🔍 Raporlarda Ara", "", placeholder="Tarih veya kelime...")
+    
+    # 2. Tüm dosyaları çek
     dosyalar = glob.glob("ARSIV/*.md")
+    # Yeniden eskiye sırala
     dosyalar.sort(key=os.path.getmtime, reverse=True)
-    if dosyalar:
-        files = [os.path.basename(f) for f in dosyalar]
-        rep = st.sidebar.radio("🗄️ Rapor Arşivi", files)
+    
+    # 3. Filtreleme
+    if search_query:
+        filtreli_dosyalar = [f for f in dosyalar if search_query.lower() in f.lower()]
+    else:
+        filtreli_dosyalar = dosyalar
+        
+    # 4. Temiz Liste Gösterimi (Dropdown)
+    if filtreli_dosyalar:
+        # Dosya yollarını temiz isimlere çevirerek göster
+        dosya_isimleri = {os.path.basename(f).replace(".md", "").replace("_", " "): f for f in filtreli_dosyalar}
+        secilen_isim = st.sidebar.selectbox("Mevcut Raporlar", list(dosya_isimleri.keys()))
+        rep_path = dosya_isimleri[secilen_isim]
+        
+        # Seçilen raporu oku
         try:
-            with open(f"ARSIV/{rep}", "r", encoding="utf-8") as f: secilen_icerik = f.read()
+            with open(rep_path, "r", encoding="utf-8") as f: secilen_icerik = f.read()
+            rep = secilen_isim # Başlık için
         except: pass
-except: pass
+    else:
+        st.sidebar.warning("Kriterlere uygun rapor bulunamadı.")
+        
+except Exception as e: st.sidebar.error(f"Arşiv Hatası: {e}")
 
 # --- ANA EKRAN ---
 st.title("☁️ KÜRESEL SAVAŞ ODASI")
@@ -345,7 +367,7 @@ with col_sol:
         c = re.sub(r"```html|```", "", secilen_icerik)
         components.html(c, height=1000, scrolling=True)
     else:
-        st.info("Arşivde rapor yok.")
+        st.info("Arşivden bir rapor seçin veya arama yapın.")
 
 # SAĞ: CHAT
 with col_sag:
@@ -377,7 +399,7 @@ with col_sag:
                 sys_msg = {"role": "system", "content": "Sen Savaş Odası stratejistisin. Raporu ve verileri kullanarak derin analiz yap."}
                 enhanced_q = {"role": "user", "content": f"SORU: {q}\n\n[ARŞİV]:\n{arsiv}\n\n[WEB]:\n{web}"}
                 
-                # --- GÜNCELLENDİ: ROTASYONEL FONKSİYON VE SEÇİLEN MODEL ---
+                # --- ROTASYONEL FONKSİYON VE SEÇİLEN MODEL ---
                 try:
                     stream = ask_ai_with_rotation(
                         [sys_msg] + msgs[-10:-1] + [enhanced_q], 
