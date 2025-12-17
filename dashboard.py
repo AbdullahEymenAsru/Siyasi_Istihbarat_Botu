@@ -271,17 +271,38 @@ if st_theme != st.session_state.theme: st.session_state.theme = st_theme; st.rer
 
 st.sidebar.divider()
 
-# --- YENİLENEN ARŞİV ARAMA MODÜLÜ ---
-st.sidebar.header("🗄️ İSTİHBARAT KÜTÜPHANESİ")
-search_query = st.sidebar.text_input("🔍 Raporlarda Ara", "", placeholder="Tarih veya konu...")
+# --- YENİLENEN HİYERARŞİK ARŞİV SİSTEMİ ---
+st.sidebar.header("🗄️ STRATEJİK ARŞİV")
 
-dosyalar = glob.glob("ARSIV/*.md")
-dosyalar.sort(key=os.path.getmtime, reverse=True)
+# Arama motoru her zaman en üstte
+search_query = st.sidebar.text_input("🔍 Hızlı Dosya Ara", "", placeholder="Tarih veya konu...")
 
-if search_query:
-    filtreli_dosyalar = [f for f in dosyalar if search_query.lower() in f.lower()]
+# Dosya listesini hazırla
+dosyalar = sorted(glob.glob("ARSIV/*.md"), key=os.path.getmtime, reverse=True)
+
+# HİYERARŞİ OLUŞTURMA MANTIĞI
+if not search_query:
+    # Dosya isimlerinden YIL bilgisini çek (Regex: 4 haneli sayı)
+    years = sorted(list(set([re.search(r"\d{4}", os.path.basename(f)).group() for f in dosyalar if re.search(r"\d{4}", os.path.basename(f))])), reverse=True)
+    
+    if years:
+        selected_year = st.sidebar.selectbox("📅 Yıl Seçin", years)
+        
+        # Seçilen yıla ait AY bilgisini çek (Regex: -dd-)
+        months = sorted(list(set([re.search(r"-(\d{2})-", os.path.basename(f)).group(1) for f in dosyalar if selected_year in os.path.basename(f) and re.search(r"-(\d{2})-", os.path.basename(f))])), reverse=True)
+        
+        if months:
+            selected_month = st.sidebar.selectbox("🗓️ Ay Seçin", months)
+            # O aya ait dosyaları filtrele
+            filtreli_dosyalar = [f for f in dosyalar if f"{selected_year}-{selected_month}" in os.path.basename(f)]
+        else: 
+            # Ay bulunamazsa sadece yıla göre filtrele
+            filtreli_dosyalar = [f for f in dosyalar if selected_year in os.path.basename(f)]
+    else: 
+        filtreli_dosyalar = dosyalar
 else:
-    filtreli_dosyalar = dosyalar
+    # Arama yapılıyorsa hiyerarşiyi baypas et
+    filtreli_dosyalar = [f for f in dosyalar if search_query.lower() in f.lower()]
 
 rep = "Veri Yok"
 secilen_icerik = "Görüntülenecek rapor bulunamadı."
@@ -289,7 +310,7 @@ secilen_icerik = "Görüntülenecek rapor bulunamadı."
 if filtreli_dosyalar:
     # Dosya isimlerini temizleyerek göster
     dosya_map = {os.path.basename(f).replace(".md", "").replace("_", " "): f for f in filtreli_dosyalar}
-    secilen_isim = st.sidebar.selectbox("Mevcut Kayıtlar", list(dosya_map.keys()))
+    secilen_isim = st.sidebar.selectbox("📄 Raporlar", list(dosya_map.keys()))
     
     if secilen_isim:
         try:
