@@ -28,19 +28,21 @@ client = Groq(api_key=GROQ_API_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 
+# SADECE AKTİF KULLANICILARI ÇEKEN FONKSİYON
 def get_email_list():
     try:
-        response = supabase.table("abone_listesi").select("email").execute()
+        response = supabase.table("abone_listesi").select("email").eq("aktif", True).execute()
         return [row['email'] for row in response.data] if response.data else []
     except: return []
 
 ALICI_LISTESI = get_email_list()
 
 # ==========================================
-# 2. İSTİHBARAT KAYNAKLARI (BATI - DOĞU - SAHA)
+# 2. GENİŞLETİLMİŞ KÜRESEL İSTİHBARAT AĞI
 # ==========================================
 
 RSS_SOURCES = {
+    # STRATEJİK DÜŞÜNCE KURULUŞLARI
     "STRATEJIK": [
         "https://foreignpolicy.com/feed/",
         "https://www.csis.org/rss/analysis",
@@ -49,16 +51,25 @@ RSS_SOURCES = {
         "https://www.cfr.org/rss/newsletters/daily-brief",
         "https://www.setav.org/feed/"
     ],
-    "GLOBAL_HABER": [
+    # BATI MEDYASI
+    "BATI": [
         "http://feeds.bbci.co.uk/news/world/rss.xml",
         "http://rss.cnn.com/rss/edition_world.rss",
         "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best",
-        "http://www.xinhuanet.com/english/rss/worldrss.xml", # Çin
-        "https://tass.com/rss/v2.xml",                       # Rusya
-        "https://www.aljazeera.com/xml/rss/all.xml",         # Orta Doğu
-        "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms" # Hindistan
+        "https://www.voanews.com/api/z$omeovuro",
+        "https://www.france24.com/en/rss"
     ],
-    "TELEGRAM_SAHA": [
+    # DOĞU VE ASYA MEDYASI
+    "DOGU": [
+        "http://www.xinhuanet.com/english/rss/worldrss.xml", # Çin
+        "http://www.chinadaily.com.cn/rss/world_rss.xml",
+        "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms", # Hindistan
+        "https://www.dawn.com/feeds/home",            # Pakistan
+        "https://tass.com/rss/v2.xml",                # Rusya
+        "https://www.aljazeera.com/xml/rss/all.xml"   # Orta Doğu
+    ],
+    # SAHA İSTİHBARATI
+    "TELEGRAM": [
         "https://rsshub.app/telegram/channel/geopolitics_live",
         "https://rsshub.app/telegram/channel/intelslava"
     ]
@@ -72,22 +83,19 @@ def get_full_text(url):
     if "t.me" in url or ".pdf" in url: return None
     try:
         downloaded = trafilatura.fetch_url(url)
-        return trafilatura.extract(downloaded)[:2000] if downloaded else None
+        return trafilatura.extract(downloaded)[:2500] if downloaded else None
     except: return None
 
 def fetch_news():
-    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR (SON 12-24 SAAT)...")
+    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR...")
     
     ai_input_data = []
     reference_html_list = []
     
-    # --- TEKRAR ÖNLEME MEKANİZMASI ---
-    # Supabase'e bakıyoruz: Son 24 saatte bu linki zaten raporladık mı?
-    # Eğer sistem 12 saatte bir çalışırsa, bu kontrol sayesinde
-    # sadece "yeni düşen" haberleri alır.
+    # 12 SAATLİK TEKRAR KONTROLÜ
     try:
-        past_24h = datetime.datetime.now() - datetime.timedelta(hours=24)
-        response = supabase.table("reports").select("content").gte("created_at", past_24h.isoformat()).execute()
+        past_12h = datetime.datetime.now() - datetime.timedelta(hours=12)
+        response = supabase.table("reports").select("content").gte("created_at", past_12h.isoformat()).execute()
         past_content = str(response.data)
     except: past_content = ""
 
@@ -95,28 +103,25 @@ def fetch_news():
     for cat in RSS_SOURCES.values(): all_urls.extend(cat)
     
     counter = 1
-    # Her kaynaktan en taze 1 haberi al (Hız ve verimlilik için)
+    # Her kaynaktan en taze 1 haberi al
     for url in all_urls:
         try:
             feed = feedparser.parse(url)
             if not feed.entries: continue
 
             for entry in feed.entries[:1]: 
-                # KRİTİK FİLTRE: Link daha önce işlendi mi?
                 if entry.link not in past_content:
                     full = get_full_text(entry.link)
                     summary = full if full else entry.get('summary', '')[:600]
                     title = entry.title
                     source = feed.feed.get('title', 'Kaynak')
                     
-                    # AI'ya gidecek ham veri
+                    # AI Verisi
                     ai_input_data.append(f"[{counter}] SOURCE: {source} | TITLE: {title} | CONTENT: {summary}")
                     
-                    # E-postanın altındaki kaynakça listesi (Temiz Link Yapısı)
+                    # E-posta Kaynakça Listesi
                     reference_html_list.append(
-                        f"<li style='margin-bottom:6px; font-size:12px;'>"
-                        f"<b>[{counter}]</b> <a href='{entry.link}' target='_blank' style='color:#3498db; text-decoration:none;'>{title}</a> "
-                        f"<span style='color:#95a5a6;'> — {source}</span></li>"
+                        f"<li style='margin-bottom:6px;'><b>[{counter}]</b> <a href='{entry.link}' style='color:#0000EE; text-decoration:none;'>{source} - {title}</a></li>"
                     )
                     counter += 1
         except: continue
@@ -124,7 +129,7 @@ def fetch_news():
     return "\n\n".join(ai_input_data), "".join(reference_html_list)
 
 # ==========================================
-# 4. DOKTRİNER ANALİZ (PROFESYONEL HTML)
+# 4. DOKTRİNER ANALİZ (SENİN SEVDİĞİN ESKİ FORMAT)
 # ==========================================
 
 def run_agent_workflow(current_data):
@@ -132,60 +137,48 @@ def run_agent_workflow(current_data):
     
     system_prompt = f"""
     Sen 'Küresel Savaş Odası'nın Baş Stratejistisin.
-    GÖREVİN: İstihbarat verilerini analiz etmek ve **görsel olarak ferah, okunabilir bir HTML rapor** hazırlamak.
+    GÖREVİN: İstihbarat verilerini analiz etmek ve **DOKTRİNER DİLLE**, aşağıdaki **ESKİ VE NET FORMATTA** raporlamak.
 
-    **TASARIM VE İÇERİK KURALLARI:**
-    1. **ANALİZ YÖNTEMİ:** Olayları özetleme, *sonuçlarını ve geleceğini* yaz. (Realizm, Güç Dengesi).
+    **GENEL KURALLAR:**
+    1. **GELECEK ODAKLI:** "Rusya saldırdı" deme. "Bu saldırı tahıl krizini tetikleyerek Afrika'da istikrarsızlık yaratacak" de.
     2. **ATIF:** Bilgi verdiğin her yerde `` kullan.
-    3. **TÜRKÇE:** Dil resmi, akıcı ve terminolojik olsun.
+    3. **DİL:** Ciddi, akademik ve sürükleyici.
 
-    **HTML ÇIKTI FORMATI (BUNU KULLAN):**
+    **ZORUNLU HTML FORMATI (BUNU KULLAN):**
     
-    <div style="background-color: #fff0f0; border-left: 5px solid #e74c3c; padding: 20px; margin-bottom: 30px; border-radius: 4px;">
-        <h2 style="color: #c0392b; margin-top: 0; font-family: 'Georgia', serif; font-size: 20px;">🚨 KIRMIZI ALARM (Sıcak Çatışma & Riskler)</h2>
-        <p style="color: #2c3e50; line-height: 1.6; margin-bottom: 0;">
-            (Buraya en acil 1-2 çatışma veya kriz haberini ve gelecek analizini yaz. kullan.)
+    <div style="background-color: #3e0e0e; color: #fff; padding: 20px; border-left: 6px solid #e74c3c; margin-bottom: 25px; border-radius: 4px;">
+        <h2 style="color: #ff6b6b; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 KIRMIZI ALARM (Sıcak Çatışma & Riskler)</h2>
+        <p style="font-size: 16px; line-height: 1.6;">
+            (En acil çatışma haberini ve gelecek risklerini buraya yaz.)
         </p>
     </div>
 
-    <div style="margin-bottom: 30px;">
-        <h2 style="color: #2980b9; border-bottom: 2px solid #eee; padding-bottom: 10px; font-family: 'Georgia', serif; font-size: 18px;">🌍 KÜRESEL UFUK TURU</h2>
-        
-        <div style="margin-bottom: 15px;">
-            <strong style="color: #34495e;">📍 Asya-Pasifik & Doğu:</strong>
-            <span style="color: #555; line-height: 1.6;">(Çin, Hindistan, Rusya gelişmeleri.)</span>
-        </div>
-        
-        <div style="margin-bottom: 15px;">
-            <strong style="color: #34495e;">📍 Avrupa & Batı Bloku:</strong>
-            <span style="color: #555; line-height: 1.6;">(ABD, AB, Ukrayna gelişmeleri.)</span>
-        </div>
-
-        <div>
-            <strong style="color: #34495e;">📍 Orta Doğu Hattı:</strong>
-            <span style="color: #555; line-height: 1.6;">(İsrail, Filistin, İran, Türkiye ekseni.)</span>
-        </div>
+    <div style="margin-bottom: 30px; border-bottom: 2px solid #ccc; padding-bottom: 20px;">
+        <h2 style="color: #2980b9; font-family: 'Georgia', serif;">🌍 KÜRESEL UFUK TURU</h2>
+        <p><b>📍 Asya-Pasifik & Doğu:</b> (Çin, Hindistan, Rusya hamleleri.)</p>
+        <p><b>📍 Avrupa & Batı Bloku:</b> (ABD, AB, Ukrayna gelişmeleri.)</p>
+        <p><b>📍 Orta Doğu Hattı:</b> (İsrail, Filistin, Türkiye ekseni.)</p>
     </div>
 
-    <div style="background-color: #f8f9fa; border: 1px solid #e1e4e8; padding: 20px; border-radius: 6px; margin-bottom: 30px;">
-        <h2 style="color: #2c3e50; margin-top: 0; font-family: 'Georgia', serif; font-size: 18px;">🧠 THINK-TANK & AKADEMİK DERİNLİK</h2>
-        <p style="color: #555; line-height: 1.6;">
-            (Buraya Foreign Policy, SETA gibi kaynaklardan derin bir analiz yaz.)
-        </p>
-        
-        <hr style="border: 0; border-top: 1px dashed #ccc; margin: 15px 0;">
-        
-        <p style="font-size: 14px; color: #2c3e50;">
-            <b>🎓 Günün Kavramı:</b> (Olayları açıklayan bir Uluslararası İlişkiler kavramı - Örn: Security Dilemma)<br>
-            <b>📚 Okuma Önerisi:</b> (Yazar Adı - Makale/Kitap Başlığı)
+    <div style="background-color: #f0f3f4; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+        <h2 style="color: #8e44ad; margin-top: 0; font-family: 'Georgia', serif;">🧠 THINK-TANK KÖŞESİ (Derin Okuma)</h2>
+        <p style="color: #333; line-height: 1.6;">
+            (Akademik ve derin analizler.)
         </p>
     </div>
 
-    <div style="border-left: 5px solid #27ae60; padding-left: 15px;">
-        <h2 style="color: #27ae60; margin-top: 0; font-family: 'Georgia', serif; font-size: 18px;">🔮 GELECEK SENARYOLARI & POLİTİKA</h2>
-        <p style="color: #2c3e50; line-height: 1.6;">
-            (Önümüzdeki 30 gün için öngörülerin ve Türkiye için kısa bir stratejik tavsiye.)
+    <div style="border-left: 5px solid #27ae60; padding-left: 15px; margin-bottom: 30px;">
+        <h2 style="color: #27ae60; margin-top: 0; font-family: 'Georgia', serif;">🔮 GELECEK SENARYOLARI & POLİTİKA</h2>
+        <p style="color: #222; line-height: 1.6;">
+            (Önümüzdeki 1 ay için öngörün ve Türkiye'ye tavsiyen.)
         </p>
+    </div>
+
+    <div style="background-color: #fff8e1; border: 1px solid #ffecb3; padding: 15px; border-radius: 5px;">
+        <h3 style="color: #d35400; margin-top: 0;">🎓 GÜNÜN AKADEMİK KAVRAMI</h3>
+        <p><b>Kavram:</b> (Örn: Security Dilemma)<br>
+        <b>Tanım:</b> (Kısa akademik tanım)<br>
+        <b>📖 Kitap/Makale Önerisi:</b> (Yazar - Eser Adı)</p>
     </div>
     """
 
@@ -224,48 +217,28 @@ def send_email(report_body, references_html, audio_file):
     print(f"📧 {len(ALICI_LISTESI)} kişiye gönderiliyor...")
     today = datetime.datetime.now().strftime("%d.%m.%Y")
     
-    # NİHAİ E-POSTA ŞABLONU (FERAH TASARIM)
+    # SENİN İSTEDİĞİN GÖRSEL TASARIM
     email_html = f"""
-    <!DOCTYPE html>
     <html>
-    <head>
-    <style>
-        body {{ margin: 0; padding: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f4f4f4; }}
-        .container {{ max-width: 700px; margin: 20px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }}
-        .header {{ background-color: #2c3e50; color: #ffffff; padding: 30px 20px; text-align: center; }}
-        .header h1 {{ margin: 0; font-family: 'Georgia', serif; letter-spacing: 1px; font-size: 24px; text-transform: uppercase; }}
-        .header p {{ margin: 5px 0 0; font-size: 13px; color: #bdc3c7; font-style: italic; }}
-        .content {{ padding: 40px 30px; color: #333333; }}
-        .footer {{ background-color: #ecf0f1; padding: 20px; text-align: center; font-size: 12px; color: #7f8c8d; }}
-        .btn {{ display: inline-block; background-color: #e74c3c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; font-weight: bold; margin-top: 10px; font-size: 12px; }}
-        .ref-section {{ margin-top: 40px; padding-top: 20px; border-top: 2px solid #f0f0f0; }}
-        .ref-title {{ color: #95a5a6; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; font-weight: bold; }}
-        ul {{ padding-left: 20px; margin: 0; }}
-    </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>KÜRESEL SAVAŞ ODASI</h1>
-                <p>"Doktriner Analiz & Stratejik İstihbarat" | {today}</p>
-                <a href="https://siyasi-istihbarat-botu.streamlit.app/" class="btn" style="color:white;">🚀 CANLI SAVAŞ ODASI PANELİ</a>
+    <body style="font-family: Arial, sans-serif; background-color: #ffffff; padding: 20px; color: #333;">
+        <div style="max-width: 800px; margin: auto;">
+            
+            <div style="text-align: center; border-bottom: 3px solid #000; padding-bottom: 15px; margin-bottom: 30px;">
+                <h1 style="margin: 0; color: #000; font-family: 'Times New Roman', serif; text-transform: uppercase;">KÜRESEL SAVAŞ ODASI</h1>
+                <p style="margin: 5px 0 0 0; color: #555; font-style: italic;">Stratejik İstihbarat Bülteni | {today}</p>
+                <br>
+                <a href="https://siyasi-istihbarat-botu.streamlit.app/" style="background-color: #000; color: #fff; padding: 8px 15px; text-decoration: none; font-size: 12px; font-weight: bold;">CANLI PANEL</a>
             </div>
 
-            <div class="content">
-                {report_body}
+            {report_body}
 
-                <div class="ref-section">
-                    <div class="ref-title">📚 DOĞRULANMIŞ İSTİHBARAT AKIŞI & LİNKLER</div>
-                    <ul>
-                        {references_html}
-                    </ul>
-                </div>
+            <div style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ccc;">
+                <h3 style="color: #333; font-family: 'Georgia', serif;">📚 DOĞRULANMIŞ KAYNAKÇA & REFERANSLAR</h3>
+                <ul style="font-size: 12px; color: #555; padding-left: 20px; line-height: 1.8;">
+                    {references_html}
+                </ul>
             </div>
 
-            <div class="footer">
-                Bu rapor, açık kaynak istihbarat (OSINT) verilerinin yapay zeka destekli stratejik analizidir.<br>
-                &copy; 2025 Savaş Odası | Gizli değildir, dağıtılabilir.
-            </div>
         </div>
     </body>
     </html>
@@ -280,7 +253,7 @@ def send_email(report_body, references_html, audio_file):
             msg = MIMEMultipart()
             msg['From'] = GMAIL_USER
             msg['To'] = email
-            msg['Subject'] = f"🛡️ SAVAŞ ODASI: Stratejik Durum - {today}"
+            msg['Subject'] = f"KIRMIZI ALARM: Stratejik Durum - {today}"
             msg.attach(MIMEText(email_html, 'html'))
 
             if audio_file and os.path.exists(audio_file):
