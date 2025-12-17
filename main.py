@@ -101,3 +101,7 @@ def main(page: ft.Page):
 
 # Uygulamayı Başlat
 ft.app(target=main, view=ft.AppView.WEB_BROWSER)
+
+# Replit'te çalışması için view=WEB_BROWSER ve port ayarı önemlidir
+if __name__ == "__main__":
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8080)
