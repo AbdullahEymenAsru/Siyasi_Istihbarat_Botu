@@ -37,25 +37,46 @@ def get_email_list():
 ALICI_LISTESI = get_email_list()
 
 # ==========================================
-# 2. İSTİHBARAT KAYNAKLARI
+# 2. GENİŞLETİLMİŞ KÜRESEL İSTİHBARAT AĞI
 # ==========================================
 
 RSS_SOURCES = {
+    # --- STRATEJİK DÜŞÜNCE KURULUŞLARI (THINK-TANKS) ---
     "STRATEJIK": [
         "https://foreignpolicy.com/feed/",
-        "https://www.understandingwar.org/feeds.xml", 
+        "https://www.csis.org/rss/analysis",  # CSIS (Center for Strategic and International Studies)
+        "https://www.setav.org/feed/",        # SETA (Türkiye Perspektifi)
+        "https://carnegieendowment.org/rss/solr/get/all", # Carnegie
+        "https://www.understandingwar.org/feeds.xml",     # ISW (Savaş Araştırmaları)
         "https://warontherocks.com/feed/",
         "https://www.cfr.org/rss/newsletters/daily-brief"
     ],
-    "HABER": [
-        "https://www.aa.com.tr/tr/rss/default?cat=guncel",
-        "https://www.trthaber.com/dunya_articles.rss",
-        "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best",
-        "https://www.aljazeera.com/xml/rss/all.xml"
+
+    # --- BATI BLOKU MEDYASI ---
+    "BATI_MEDYASI": [
+        "http://rss.cnn.com/rss/edition_world.rss",       # CNN International
+        "http://feeds.bbci.co.uk/news/world/rss.xml",     # BBC World
+        "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best", # Reuters
+        "https://www.voanews.com/api/z$omeovuro",         # Voice of America (VOA)
+        "https://www.dw.com/xml/rss-tur-dunya",           # Deutsche Welle
+        "https://www.france24.com/en/rss"                 # France 24
     ],
+
+    # --- DOĞU VE ASYA-PASİFİK ---
+    "DOGU_MEDYASI": [
+        "http://www.chinadaily.com.cn/rss/world_rss.xml", # Çin (China Daily)
+        "http://xinhuanet.com/english/rss/worldrss.xml",  # Çin (Xinhua)
+        "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms", # Hindistan (Times of India)
+        "https://www.dawn.com/feeds/home",                # Pakistan (Dawn)
+        "https://tass.com/rss/v2.xml",                    # Rusya (TASS)
+        "https://www.aljazeera.com/xml/rss/all.xml"       # Katar/Orta Doğu (Al Jazeera)
+    ],
+
+    # --- SAHA İSTİHBARATI (TELEGRAM KÖPRÜLERİ) ---
     "TELEGRAM": [
         "https://rsshub.app/telegram/channel/geopolitics_live",
-        "https://rsshub.app/telegram/channel/intelslava"
+        "https://rsshub.app/telegram/channel/intelslava",
+        "https://rsshub.app/telegram/channel/bellincat"
     ]
 }
 
@@ -71,38 +92,41 @@ def get_full_text(url):
     except: return None
 
 def fetch_news():
-    print("🕵️‍♂️ İSTİHBARAT TOPLANIYOR...")
+    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR...")
     
-    # AI'ya verilecek ham veri
     ai_input_data = []
-    
-    # E-postanın altına eklenecek düzenli kaynakça listesi (HTML)
     reference_html_list = []
     
-    # Tekrar kontrolü için geçmişi çek
     try:
         past_24h = datetime.datetime.now() - datetime.timedelta(hours=24)
         response = supabase.table("reports").select("content").gte("created_at", past_24h.isoformat()).execute()
         past_content = str(response.data)
     except: past_content = ""
 
-    all_urls = RSS_SOURCES["STRATEJIK"] + RSS_SOURCES["HABER"] + RSS_SOURCES["TELEGRAM"]
+    # Tüm kategorileri birleştir
+    all_urls = []
+    for category in RSS_SOURCES.values():
+        all_urls.extend(category)
     
     counter = 1
+    # Kaynak sayısını artırdığımız için her kaynaktan sadece EN YENİ 1 haberi alıyoruz (Hız ve Token Tasarrufu)
     for url in all_urls:
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:2]: # Her kaynaktan en yeni 2 haber
+            # Eğer feed boşsa veya hata varsa atla
+            if not feed.entries: continue
+
+            for entry in feed.entries[:1]: 
                 if entry.link not in past_content:
                     full = get_full_text(entry.link)
-                    summary = full if full else entry.get('summary', '')[:500]
+                    summary = full if full else entry.get('summary', '')[:600]
                     title = entry.title
                     source = feed.feed.get('title', 'Kaynak')
                     
-                    # AI'ya gidecek format (Numaralı)
+                    # AI Formatı
                     ai_input_data.append(f"[{counter}] SOURCE: {source} | TITLE: {title} | CONTENT: {summary}")
                     
-                    # E-postaya gidecek format (Numaralı Liste)
+                    # E-posta Formatı
                     reference_html_list.append(
                         f"<li style='margin-bottom: 5px;'><b>[{counter}]</b> <a href='{entry.link}' style='color:#2980b9; text-decoration:none;'>{title}</a> <span style='color:#7f8c8d; font-size:11px;'>— {source}</span></li>"
                     )
@@ -122,30 +146,30 @@ def run_agent_workflow(current_data):
 
     system_prompt = f"""
     Sen 'Küresel Savaş Odası'nın Baş Fütüristi ve Stratejistisin.
-    GÖREVİN: Güncel istihbaratı okuyarak, bu olayların **GELECEKTEKİ ETKİLERİNİ** analiz etmek.
+    GÖREVİN: Aşağıdaki geniş kapsamlı (Batı, Doğu, Asya) istihbaratı kullanarak "Jeopolitik Durum Değerlendirmesi" yazmak.
 
-    **KESİN KURALLAR:**
-    1. **ÖZET ÇIKARMA:** Kullanıcı olayları zaten biliyor. "Rusya Ukrayna'ya saldırdı" deme.
-    2. **GELECEĞİ YAZ:** "Bu saldırı, 3 ay içinde tahıl koridorunu tıkayacak ve Kuzey Afrika'da gıda ayaklanmalarını tetikleyecek" gibi nedensellik bağları kur.
-    3. **DOKTRİNER DİL:** Realizm, Güç Dengesi, Abundance Hareketi, Genesis Misyonu gibi kavramları analizlerine yedir.
-    4. **NUMARALI ATIF:** Analizinde dayandığın bilgiye `` şeklinde atıf yap. (X, sana verilen verideki numaradır).
+    **ANALİZ KURALLARI:**
+    1. **GELECEK ODAKLI:** Olayları özetleme, *sonuçlarını* yaz. (Örn: "Çin'in bu hamlesi, 6 ay içinde Tayvan Boğazı'nda ablukaya yol açabilir").
+    2. **KÜRESEL PERSPEKTİF:** Analizlerinde sadece Batı değil, Doğu (Çin, Rusya, Hindistan) perspektifini de harmanla.
+    3. **DOKTRİNER DİL:** Realizm, Güç Dengesi, Hibrit Savaş, Abundance Hareketi gibi kavramları kullan.
+    4. **ATIF SİSTEMİ:** Mutlaka `` formatını kullan.
 
     **RAPOR FORMATI (HTML):**
     <div style="font-family: 'Georgia', serif; color: #222; line-height: 1.6;">
         
-        <h2 style="color:#c0392b; border-bottom: 2px solid #c0392b; padding-bottom: 5px;">I. STRATEJİK KIRILMA VE GELECEK (YÖNETİCİ ÖZETİ)</h2>
-        <p>(En kritik 3 olayın birleşimiyle oluşan "Büyük Resim" ve 6 aylık projeksiyon.)</p>
+        <h2 style="color:#c0392b; border-bottom: 2px solid #c0392b; padding-bottom: 5px;">I. KÜRESEL GÜÇ DENGESİ VE KIRILMALAR</h2>
+        <p>(ABD, Çin ve Rusya eksenindeki en kritik gelişmelerin stratejik analizi.)</p>
 
-        <h2 style="color:#2980b9; border-bottom: 2px solid #2980b9; padding-bottom: 5px; margin-top:30px;">II. CEPHELER VE OLASI SENARYOLAR</h2>
+        <h2 style="color:#2980b9; border-bottom: 2px solid #2980b9; padding-bottom: 5px; margin-top:30px;">II. BÖLGESEL SENARYOLAR VE RİSKLER</h2>
         
-        <h3 style="color:#2c3e50; margin-bottom: 5px;">🔮 Senaryo A: Ekonomik ve Teknolojik Savaş</h3>
-        <p>(Genesis Misyonu, Çip Savaşları veya Enerji üzerinden analiz. Mutlaka kullan.)</p>
+        <h3 style="color:#2c3e50; margin-bottom: 5px;">🌏 Asya-Pasifik & Hint Altıtası</h3>
+        <p>(Çin, Hindistan ve Pakistan gelişmeleri üzerinden analiz. kullan.)</p>
 
-        <h3 style="color:#2c3e50; margin-bottom: 5px;">🔥 Senaryo B: Asimetrik ve Vekalet Savaşları</h3>
-        <p>(Sahadaki çatışmaların sıçrama riskleri. Mutlaka kullan.)</p>
+        <h3 style="color:#2c3e50; margin-bottom: 5px;">🌍 Avrupa & Orta Doğu Hattı</h3>
+        <p>(Avrupa güvenliği ve Orta Doğu'daki vekalet savaşları. kullan.)</p>
 
         <div style="background-color:#f8f9fa; border-left: 4px solid #27ae60; padding: 15px; margin-top: 25px; font-style: italic;">
-            <b>💡 Doktriner Not:</b> (Realizm veya Liberalizm teorisi üzerinden kısa bir stratejik tavsiye.)
+            <b>💡 Stratejik Öngörü:</b> (Türkiye veya Küresel Sistem için tek cümlelik, vurucu bir gelecek tahmini.)
         </div>
     </div>
     """
@@ -155,9 +179,9 @@ def run_agent_workflow(current_data):
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"GÜNCEL NUMARALI İSTİHBARAT:\n{current_data}"}
+                {"role": "user", "content": f"GÜNCEL KÜRESEL İSTİHBARAT:\n{current_data}"}
             ],
-            temperature=0.5 # Biraz daha yaratıcı olması için sıcaklığı artırdık
+            temperature=0.5
         )
         return completion.choices[0].message.content
     except Exception as e:
@@ -188,7 +212,6 @@ def send_email(report_body, references_html, audio_file):
     print(f"📧 {len(ALICI_LISTESI)} kişiye gönderiliyor...")
     today = datetime.datetime.now().strftime("%d.%m.%Y")
     
-    # Nihai E-Posta Şablonu (Haritasız & Düzenli)
     email_html = f"""
     <html>
     <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
@@ -205,14 +228,14 @@ def send_email(report_body, references_html, audio_file):
             {report_body}
 
             <div style="margin-top: 50px; padding-top: 20px; border-top: 2px solid #ecf0f1;">
-                <h3 style="color: #2c3e50; font-size: 16px; text-transform: uppercase;">📚 DOĞRULANMIŞ KAYNAKÇA & İSTİHBARAT AKIŞI</h3>
+                <h3 style="color: #2c3e50; font-size: 16px; text-transform: uppercase;">📚 KÜRESEL İSTİHBARAT AKIŞI (DOĞRULANMIŞ)</h3>
                 <ol style="font-size: 13px; color: #555; padding-left: 20px; line-height: 1.8;">
                     {references_html}
                 </ol>
             </div>
 
             <div style="text-align: center; margin-top: 30px; font-size: 11px; color: #aaa;">
-                Bu rapor, yapay zeka destekli açık kaynak istihbarat (OSINT) analizidir.
+                Bu rapor, Batı ve Doğu kaynaklı açık istihbarat verilerinin (OSINT) yapay zeka ile sentezlenmesiyle oluşturulmuştur.
             </div>
         </div>
     </body>
@@ -228,7 +251,7 @@ def send_email(report_body, references_html, audio_file):
             msg = MIMEMultipart()
             msg['From'] = GMAIL_USER
             msg['To'] = email
-            msg['Subject'] = f"🛡️ SAVAŞ ODASI: Gelecek Projeksiyonu ({today})"
+            msg['Subject'] = f"🛡️ SAVAŞ ODASI: Stratejik Analiz ({today})"
             msg.attach(MIMEText(email_html, 'html'))
 
             if audio_file and os.path.exists(audio_file):
@@ -251,16 +274,12 @@ def send_email(report_body, references_html, audio_file):
 # ==========================================
 
 if __name__ == "__main__":
-    # Haberleri ve formatlanmış kaynakça listesini çek
     news_data, ref_html_list = fetch_news()
     
     if news_data:
-        # Analiz yap
         report_html = run_agent_workflow(news_data)
-        # Seslendir
         audio = create_audio_summary(report_html)
         
-        # Arşivle (Git & Supabase)
         try:
             supabase.table("reports").insert({"content": report_html}).execute()
             
@@ -270,7 +289,6 @@ if __name__ == "__main__":
             with open(file_name, "w", encoding="utf-8") as f:
                 f.write(report_html + "\n\n<h3>KAYNAKÇA</h3>\n<ul>" + ref_html_list + "</ul>")
             
-            # Git işlemleri (Opsiyonel, hata verirse devam et)
             subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"], capture_output=True)
             subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"], capture_output=True)
             subprocess.run(["git", "add", file_name], capture_output=True)
@@ -279,7 +297,6 @@ if __name__ == "__main__":
         except Exception as e: 
             print(f"⚠️ Arşivleme uyarısı: {e}")
 
-        # Gönder
         send_email(report_html, ref_html_list, audio)
     else:
         print("⚠️ Yeterli yeni veri bulunamadı.")
