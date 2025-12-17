@@ -19,7 +19,7 @@ import streamlit.components.v1 as components
 import re 
 
 # ==========================================
-# 1. AYARLAR, TEMA & CSS
+# 1. AYARLAR, TEMA MOTORU & CSS
 # ==========================================
 
 st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️", layout="wide")
@@ -28,90 +28,62 @@ st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️
 if "theme" not in st.session_state:
     st.session_state.theme = "Karanlık"
 
-# Tema Renk Paleti
+# Tema Renk Paletleri (Python Kontrollü)
 if st.session_state.theme == "Karanlık":
-    bg_color = "#0E1117"
-    text_color = "#E0E0E0"
-    chat_user_bg = "#262730"
-    chat_bot_bg = "#1A1C24"
-    input_bg = "#262730"
-    border_color = "#4CAF50"
-    accent_color = "#4CAF50"
+    v_bg = "#0E1117"
+    v_text = "#E0E0E0"
+    v_sidebar = "#161B22"
+    v_chat = "rgba(255, 255, 255, 0.05)"
+    v_input = "#262730"
+    v_border = "rgba(128, 128, 128, 0.2)"
+    v_accent = "#4CAF50"
 else:
-    bg_color = "#FFFFFF"
-    text_color = "#1A1A1A"
-    chat_user_bg = "#E8F5E9" # Açık Yeşil
-    chat_bot_bg = "#F0F2F6"  # Açık Gri
-    input_bg = "#FFFFFF"
-    border_color = "#2E7D32"
-    accent_color = "#2E7D32"
+    v_bg = "#FFFFFF"
+    v_text = "#1A1A1A"
+    v_sidebar = "#F8F9FA"
+    v_chat = "rgba(0, 0, 0, 0.05)"
+    v_input = "#FFFFFF"
+    v_border = "#DCDDE1"
+    v_accent = "#2E7D32"
 
-# ==========================================
-# 1. AKILLI RENK VE TEMA MOTORU
-# ==========================================
-
-# Tarayıcı moduna göre renkleri AI yerine CSS değişkenleriyle otomatik eşitleme
-st.markdown("""
+# Dinamik CSS (Renkleri zorla uygular)
+st.markdown(f"""
 <style>
-    /* Streamlit'in kendi değişkenlerini kullanarak tam uyum sağla */
-    :root {
-        --text-color: inherit;
-        --bg-color: inherit;
-    }
-
-    /* Ana Uygulama Arka Planı ve Yazı Rengi Güçlendirme */
-    .stApp {
-        color: var(--text-color);
-    }
-
-    /* Chat Mesaj Kutuları: Modlara göre otomatik kontrast ayarı */
-    [data-testid="stChatMessage"] {
-        background-color: rgba(128, 128, 128, 0.1) !important;
-        border: 1px solid rgba(128, 128, 128, 0.2) !important;
-        border-radius: 10px !important;
-        padding: 1rem !important;
-    }
-
-    /* Input Alanları: Hem açık hem karanlık modda okunabilir yazı tipi */
-    .stTextInput input, .stSelectbox div, .stTextArea textarea {
-        color: var(--text-color) !important;
-        border: 1px solid #4CAF50 !important;
-    }
-
-    /* Rapor Görünümü (T1) İçin Özel Kontrast */
-    .stHtmlContainer {
-        color: var(--text-color) !important;
-    }
-
-    /* Sidebar İçindeki Elemanların Renk Sabitlemesi */
-    section[data-testid="stSidebar"] .stText, section[data-testid="stSidebar"] label {
-        color: var(--text-color) !important;
-    }
-
-    /* Butonların Renk Paleti Uyumu */
-    .stButton button {
-        background-color: #4CAF50 !important;
-        color: white !important;
-        border: none !important;
-        transition: 0.3s all ease;
-    }
-
-    .stButton button:hover {
-        background-color: #45a049 !important;
-        transform: scale(1.02);
-    }
-
-    /* Sekme (Tabs) Renkleri */
-    button[data-baseweb="tab"] {
-        color: var(--text-color) !important;
-    }
+    /* Ana Uygulama */
+    .stApp {{ background-color: {v_bg} !important; color: {v_text} !important; }}
     
-    /* Linklerin her iki modda da görünebilir olması */
-    a {
-        color: #4CAF50 !important;
-        text-decoration: none;
-        font-weight: bold;
-    }
+    /* Tüm Yazılar */
+    h1, h2, h3, h4, h5, h6, p, span, label, div, li, .stMarkdown {{ 
+        color: {v_text} !important; 
+    }}
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] {{ 
+        background-color: {v_sidebar} !important; 
+        border-right: 1px solid {v_border}; 
+    }}
+    
+    /* Mesaj Kutuları */
+    [data-testid="stChatMessage"] {{ 
+        background-color: {v_chat} !important; 
+        border: 1px solid {v_border} !important; 
+        border-radius: 10px; 
+    }}
+    
+    /* Input Alanları */
+    .stTextInput input, .stTextArea textarea, .stSelectbox div {{ 
+        background-color: {v_input} !important; 
+        color: {v_text} !important; 
+        border: 1px solid {v_accent} !important; 
+    }}
+    
+    /* Tab ve Butonlar */
+    button[data-baseweb="tab"] p {{ color: {v_text} !important; }}
+    .stButton button {{ background-color: {v_accent} !important; border: none; }}
+    .stButton button p {{ color: white !important; }}
+    
+    /* Linkler */
+    a {{ color: {v_accent} !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -226,7 +198,6 @@ def buluttan_yukle(user_id, password):
             
             # 1. DURUM: Veri Şifreliyse (Yeni Sistem)
             if isinstance(raw_data, dict) and "encrypted_data" in raw_data:
-                print("🔐 Şifreli veri bulundu, çözülüyor...")
                 decrypted = sifreyi_coz(raw_data["encrypted_data"], password)
                 if decrypted:
                     return decrypted
@@ -236,14 +207,11 @@ def buluttan_yukle(user_id, password):
             
             # 2. DURUM: Veri Şifresizse (Eski Sistem veya Hata)
             elif isinstance(raw_data, dict):
-                print("🔓 Şifresiz veri bulundu.")
                 return raw_data
             
             else:
-                print("⚠️ Veri formatı tanınamadı.")
                 return {}
         else:
-            print("📭 Bu kullanıcıya ait bulutta kayıt yok.")
             return {}
             
     except Exception as e:
@@ -323,6 +291,16 @@ if "current_session_name" not in st.session_state:
 
 # GİRİŞ EKRANI
 if not st.session_state.user and not st.session_state.is_guest:
+    # Giriş Ekranı Tema Seçici
+    c_t1, c_t2 = st.columns([8, 2])
+    with c_t2:
+        l_theme = st.selectbox("🌓 Görünüm", ["Karanlık", "Açık"], 
+                               index=0 if st.session_state.theme == "Karanlık" else 1,
+                               key="login_theme")
+        if l_theme != st.session_state.theme:
+            st.session_state.theme = l_theme
+            st.rerun()
+
     st.title("🔐 SAVAŞ ODASI: GİRİŞ EKRANI")
     st.markdown("Verileriniz uçtan uca şifrelidir (E2EE). Misafir girişlerinde veri kaydedilmez.")
     
@@ -415,12 +393,12 @@ else:
 # -- SIDEBAR: OTURUM YÖNETİMİ ---
 st.sidebar.markdown("---")
 
-# TEMA DEĞİŞTİRİCİ (EN ÜSTTE)
-st.sidebar.header("⚙️ SİSTEM AYARLARI")
-curr_theme = st.session_state.theme
-new_theme = st.sidebar.radio("Görünüm Modu", ["Karanlık", "Açık"], index=0 if curr_theme=="Karanlık" else 1)
-if new_theme != curr_theme:
-    st.session_state.theme = new_theme
+# Sidebar Tema Seçici
+s_theme = st.sidebar.selectbox("🌓 Görünüm Modu", ["Karanlık", "Açık"], 
+                               index=0 if st.session_state.theme == "Karanlık" else 1,
+                               key="sidebar_theme")
+if s_theme != st.session_state.theme:
+    st.session_state.theme = s_theme
     st.rerun()
 
 st.sidebar.header("🗄️ Operasyon Kayıtları")
