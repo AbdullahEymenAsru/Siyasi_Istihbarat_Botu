@@ -31,7 +31,8 @@ SES_MODELI = "tr-TR-AhmetNeural"
 # --- KRİTİK DÜZELTME: SADECE 'TRUE' OLANLARI ÇEK ---
 def get_email_list():
     try:
-        # Sadece 'aktif' sütunu TRUE olanları filtrele
+        # Sadece 'aktif' sütunu TRUE olanları filtrele. 
+        # FALSE veya NULL olanlar bu filtreye takılır ve listeye alınmaz.
         response = supabase.table("abone_listesi").select("email").eq("aktif", True).execute()
         return [row['email'] for row in response.data] if response.data else []
     except Exception as e:
@@ -79,7 +80,7 @@ RSS_SOURCES = {
 }
 
 # ==========================================
-# 3. VERİ TOPLAMA VE FİLTRELEME (12 SAAT KONTROLÜ)
+# 3. VERİ TOPLAMA VE FİLTRELEME (48 SAAT KONTROLÜ)
 # ==========================================
 
 def get_full_text(url):
@@ -90,15 +91,15 @@ def get_full_text(url):
     except: return None
 
 def fetch_news():
-    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR...")
+    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR (48 SAATLİK HAFIZA)...")
     
     ai_input_data = []
     reference_html_list = []
     
-    # 12 SAATLİK TEKRAR KONTROLÜ (Veritabanına sor)
+    # 48 SAATLİK TEKRAR KONTROLÜ (Böylece dünkü haber tekrar gelmez)
     try:
-        past_12h = datetime.datetime.now() - datetime.timedelta(hours=12)
-        response = supabase.table("reports").select("content").gte("created_at", past_12h.isoformat()).execute()
+        past_48h = datetime.datetime.now() - datetime.timedelta(hours=48)
+        response = supabase.table("reports").select("content").gte("created_at", past_48h.isoformat()).execute()
         past_content = str(response.data)
     except: past_content = ""
 
@@ -113,6 +114,7 @@ def fetch_news():
             if not feed.entries: continue
 
             for entry in feed.entries[:1]: 
+                # Link veritabanında var mı diye kontrol et
                 if entry.link not in past_content:
                     full = get_full_text(entry.link)
                     summary = full if full else entry.get('summary', '')[:600]
@@ -217,10 +219,10 @@ def create_audio_summary(report_html):
 
 def send_email(report_body, references_html, audio_file):
     if not ALICI_LISTESI: 
-        print("⚠️ Aktif alıcı bulunamadı.")
+        print("⚠️ Aktif alıcı bulunamadı (Tüm kullanıcılar FALSE veya NULL olabilir).")
         return
     
-    print(f"📧 {len(ALICI_LISTESI)} kişiye gönderiliyor...")
+    print(f"📧 {len(ALICI_LISTESI)} aktif aboneye gönderiliyor...")
     today = datetime.datetime.now().strftime("%d.%m.%Y")
     
     # TASARIM: Sizin İstediğiniz "Eski Tarz" (Görsel Odaklı)
