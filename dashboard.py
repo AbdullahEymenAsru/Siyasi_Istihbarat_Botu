@@ -17,76 +17,82 @@ import streamlit.components.v1 as components
 import re 
 
 # ==========================================
-# 1. AYARLAR, TEMA MOTORU & KUSURSUZ CSS
+# 1. NİHAİ TEMA MOTORU VE KESİN CSS (FIX)
 # ==========================================
 
-st.set_page_config(page_title="Savaş Odası (GUEST & E2EE)", page_icon="🛡️", layout="wide")
-
-# -- TEMA YÖNETİMİ BAŞLANGICI --
 if "theme" not in st.session_state:
     st.session_state.theme = "Karanlık"
 
-# Tema Renk Paletleri (Python Kontrollü)
+# Tema Renk Paketleri - Kesin Karşıtlık (Contrast) Odaklı
 if st.session_state.theme == "Karanlık":
-    v_bg = "#0E1117"
-    v_text = "#E0E0E0"
-    v_sidebar = "#161B22"
-    v_chat = "rgba(255, 255, 255, 0.05)"
-    v_input = "#262730"
-    v_border = "rgba(128, 128, 128, 0.2)"
-    v_accent = "#4CAF50"
+    v_bg = "#0E1117"        # Koyu Gri/Siyah Arka Plan
+    v_text = "#FFFFFF"      # Saf Beyaz Yazı
+    v_sidebar = "#161B22"   # Sidebar Arka Planı
+    v_chat_bg = "#1A1C24"   # Mesaj Balonu
+    v_input_bg = "#262730"  # Giriş Kutusu
+    v_border = "#30363D"    # Çerçeveler
+    v_accent = "#4CAF50"    # Vurgu Yeşili
 else:
-    v_bg = "#FFFFFF"
-    v_text = "#1A1A1A"
-    v_sidebar = "#F8F9FA"
-    v_chat = "rgba(0, 0, 0, 0.05)"
-    v_input = "#FFFFFF"
-    v_border = "#DCDDE1"
-    v_accent = "#2E7D32"
+    v_bg = "#FFFFFF"        # Saf Beyaz Arka Plan
+    v_text = "#121212"      # Koyu Füme/Siyah Yazı
+    v_sidebar = "#F8F9FA"   # Çok Açık Gri Sidebar
+    v_chat_bg = "#F0F2F6"   # Açık Gri Mesaj Balonu
+    v_input_bg = "#FFFFFF"  # Beyaz Giriş Kutusu
+    v_border = "#DCDDE1"    # İnce Gri Çerçeve
+    v_accent = "#2E7D32"    # Koyu Yeşil
 
-# Nihai CSS: Her iki modda da kusursuz görünüm sağlar
+# CSS: Streamlit'in tüm sınıflarını ezip komutana itaat etmesini sağlar
 st.markdown(f"""
 <style>
-    /* Ana Uygulama */
+    /* 1. Ana Uygulama Temeli */
     .stApp {{ background-color: {v_bg} !important; color: {v_text} !important; }}
-    
-    /* Tüm Yazılar */
-    h1, h2, h3, h4, h5, h6, p, span, label, div, li, .stMarkdown {{ 
+
+    /* 2. Tüm Yazı Tiplerini Zorla Boya (Okunabilirlik Garantisi) */
+    h1, h2, h3, h4, h5, h6, p, span, label, div, li, .stMarkdown, .stText {{ 
         color: {v_text} !important; 
     }}
-    
-    /* Sidebar */
-    [data-testid="stSidebar"] {{ 
+
+    /* 3. Sidebar (Yan Menü) Kontrolü */
+    section[data-testid="stSidebar"] {{ 
         background-color: {v_sidebar} !important; 
-        border-right: 1px solid {v_border}; 
+        border-right: 1px solid {v_border} !important; 
     }}
-    [data-testid="stSidebar"] * {{ color: {v_text} !important; }}
-    
-    /* Input Alanları ve Seçim Kutuları */
+    section[data-testid="stSidebar"] * {{ color: {v_text} !important; }}
+
+    /* 4. Giriş (Input) Alanları Fix - Beyazda Kaybolmayı Önler */
     .stTextInput input, .stTextArea textarea, [data-baseweb="select"] div {{ 
-        background-color: {v_input} !important; 
+        background-color: {v_input_bg} !important; 
         color: {v_text} !important; 
         border: 1px solid {v_accent} !important; 
-        border-radius: 5px !important; 
+        -webkit-text-fill-color: {v_text} !important;
     }}
-    
-    /* Chat Mesaj Kutuları */
+
+    /* 5. Chat (Sohbet) Balonları */
     [data-testid="stChatMessage"] {{ 
-        background-color: {v_chat} !important; 
+        background-color: {v_chat_bg} !important; 
         border: 1px solid {v_border} !important; 
-        border-radius: 10px; 
-        margin-bottom: 10px !important; 
+        border-radius: 15px !important;
     }}
-    
-    /* Butonlar */
-    .stButton button {{ background-color: {v_accent} !important; border: none !important; transition: 0.3s; }}
+
+    /* 6. Butonlar */
+    .stButton button {{ 
+        background-color: {v_accent} !important; 
+        color: white !important; 
+        border: none !important;
+    }}
     .stButton button p {{ color: white !important; font-weight: bold !important; }}
-    .stButton button:hover {{ opacity: 0.9; }}
-    
-    /* Tablar ve Linkler */
+
+    /* 7. Tab (Sekme) Yazıları */
     button[data-baseweb="tab"] p {{ color: {v_text} !important; }}
-    [data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
-    a {{ color: {v_accent} !important; text-decoration: none; }}
+    
+    /* 8. Linkler (Görünebilir yap) */
+    a {{ color: {v_accent} !important; font-weight: bold; text-decoration: none; }}
+    
+    /* İkon ve Simgeler */
+    svg {{ fill: {v_text} !important; }}
+
+    /* Rapor Görünümü İçin CSS */
+    .stHtmlContainer {{ color: {v_text} !important; background-color: transparent !important; }}
 </style>
 """, unsafe_allow_html=True)
 
