@@ -122,7 +122,6 @@ def buluttan_yukle(user_id, password):
         return {}
     except: return {}
 
-# --- GÜÇLENDİRİLMİŞ KAYIT FONKSİYONU ---
 def buluta_kaydet(user_id, data, password, sessiz=False):
     """Veriyi şifreler ve buluta zorla yazar."""
     try:
@@ -230,7 +229,7 @@ if st_theme != st.session_state.theme: st.session_state.theme = st_theme; st.rer
 
 st.sidebar.header("🗄️ Kayıtlar")
 
-# 1. YENİ SOHBET (Zorla Kaydet)
+# 1. YENİ SOHBET
 if st.sidebar.button("➕ YENİ SOHBET"):
     n = f"Op_{datetime.now().strftime('%H%M%S')}"
     st.session_state.chat_sessions[n] = []
@@ -243,7 +242,7 @@ sess = list(st.session_state.chat_sessions.keys())
 sel = st.sidebar.selectbox("Geçmiş", sess, index=sess.index(st.session_state.current_session_name))
 if sel != st.session_state.current_session_name: st.session_state.current_session_name = sel; st.rerun()
 
-# 2. İSİM DEĞİŞTİRME (Zorla Kaydet)
+# 2. İSİM DEĞİŞTİRME
 new_n = st.sidebar.text_input("İsim Değiştir", value=st.session_state.current_session_name)
 if new_n != st.session_state.current_session_name and new_n:
     data = st.session_state.chat_sessions.pop(st.session_state.current_session_name)
@@ -253,14 +252,22 @@ if new_n != st.session_state.current_session_name and new_n:
         buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
     st.rerun()
 
-# 3. SİLME (Zorla Kaydet)
+# --- KRİTİK DÜZELTME: SON SOHBETİ SIFIRLAMA MANTIĞI ---
 if st.sidebar.button("🗑️ İmha Et"):
-    if len(sess) > 1:
-        del st.session_state.chat_sessions[st.session_state.current_session_name]
+    current = st.session_state.current_session_name
+    # Eğer birden fazla sohbet varsa, sil ve diğerine geç
+    if len(st.session_state.chat_sessions) > 1:
+        del st.session_state.chat_sessions[current]
         st.session_state.current_session_name = list(st.session_state.chat_sessions.keys())[0]
-        if not st.session_state.is_guest: 
-            buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
-        st.rerun()
+    # Eğer tek sohbet kaldıysa, İÇİNİ BOŞALT (Resetle) ama anahtarı silme
+    else:
+        st.session_state.chat_sessions[current] = [] 
+        st.toast("Kayıtlar yakıldı, sayfa temizlendi.", icon="🔥")
+    
+    # Değişikliği anında buluta yaz
+    if not st.session_state.is_guest: 
+        buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
+    st.rerun()
 
 if st.sidebar.button("Çıkış"): st.session_state.clear(); st.rerun()
 
@@ -303,13 +310,12 @@ with col_sag:
         for m in msgs:
             with st.chat_message(m["role"]): st.markdown(m["content"])
 
-    # 4. MESAJ GÖNDERME (Zorla Kaydet)
+    # 4. MESAJ GÖNDERME
     if q := st.chat_input("Analiz emredin..."):
         msgs.append({"role": "user", "content": q})
         with chat_container:
             with st.chat_message("user"): st.markdown(q)
         
-        # Kullanıcı mesajını anında kaydet
         if not st.session_state.is_guest: 
             buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass, sessiz=True)
 
@@ -333,7 +339,6 @@ with col_sag:
                     ph.markdown(full)
                     msgs.append({"role": "assistant", "content": full})
                     
-                    # Asistan cevabını kaydet (Bildirimli)
                     if not st.session_state.is_guest: 
                         buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
                         
