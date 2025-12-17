@@ -46,60 +46,72 @@ else:
     border_color = "#2E7D32"
     accent_color = "#2E7D32"
 
-# Dinamik CSS Entegrasyonu
-st.markdown(f"""
+# ==========================================
+# 1. AKILLI RENK VE TEMA MOTORU
+# ==========================================
+
+# Tarayıcı moduna göre renkleri AI yerine CSS değişkenleriyle otomatik eşitleme
+st.markdown("""
 <style>
-    /* Ana Sayfa Yapısı */
-    .stApp {{
-        background-color: {bg_color};
-        color: {text_color};
-    }}
-    
-    /* Mesaj Kutuları (Chat) */
-    .stChatMessage {{
-        background-color: {chat_bot_bg};
-        border: 1px solid {border_color}33; /* %33 Saydamlık */
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 10px;
-        color: {text_color};
-    }}
-    
-    /* Kullanıcı Mesajı İçin Özel Renk (Streamlit DOM yapısına göre genelleme) */
-    div[data-testid="stChatMessage"] {{
-        background-color: {chat_bot_bg};
-    }}
+    /* Streamlit'in kendi değişkenlerini kullanarak tam uyum sağla */
+    :root {
+        --text-color: inherit;
+        --bg-color: inherit;
+    }
 
-    /* Input Alanları */
-    .stTextInput input, .stTextArea textarea, .stSelectbox div {{
-        background-color: {input_bg} !important;
-        color: {text_color} !important;
-        border: 1px solid {border_color} !important;
-    }}
-    
-    /* Butonlar */
-    .stButton button {{
-        background-color: {accent_color} !important;
+    /* Ana Uygulama Arka Planı ve Yazı Rengi Güçlendirme */
+    .stApp {
+        color: var(--text-color);
+    }
+
+    /* Chat Mesaj Kutuları: Modlara göre otomatik kontrast ayarı */
+    [data-testid="stChatMessage"] {
+        background-color: rgba(128, 128, 128, 0.1) !important;
+        border: 1px solid rgba(128, 128, 128, 0.2) !important;
+        border-radius: 10px !important;
+        padding: 1rem !important;
+    }
+
+    /* Input Alanları: Hem açık hem karanlık modda okunabilir yazı tipi */
+    .stTextInput input, .stSelectbox div, .stTextArea textarea {
+        color: var(--text-color) !important;
+        border: 1px solid #4CAF50 !important;
+    }
+
+    /* Rapor Görünümü (T1) İçin Özel Kontrast */
+    .stHtmlContainer {
+        color: var(--text-color) !important;
+    }
+
+    /* Sidebar İçindeki Elemanların Renk Sabitlemesi */
+    section[data-testid="stSidebar"] .stText, section[data-testid="stSidebar"] label {
+        color: var(--text-color) !important;
+    }
+
+    /* Butonların Renk Paleti Uyumu */
+    .stButton button {
+        background-color: #4CAF50 !important;
         color: white !important;
-        border-radius: 5px;
+        border: none !important;
+        transition: 0.3s all ease;
+    }
+
+    .stButton button:hover {
+        background-color: #45a049 !important;
+        transform: scale(1.02);
+    }
+
+    /* Sekme (Tabs) Renkleri */
+    button[data-baseweb="tab"] {
+        color: var(--text-color) !important;
+    }
+    
+    /* Linklerin her iki modda da görünebilir olması */
+    a {
+        color: #4CAF50 !important;
+        text-decoration: none;
         font-weight: bold;
-        border: none;
-    }}
-    .stButton button:hover {{
-        opacity: 0.8;
-        border: 1px solid {text_color} !important;
-    }}
-
-    /* Sidebar */
-    [data-testid="stSidebar"] {{
-        background-color: {"#161B22" if st.session_state.theme == "Karanlık" else "#F8F9FA"} !important;
-        border-right: 1px solid {border_color}33;
-    }}
-
-    /* Başlıklar */
-    h1, h2, h3 {{
-        color: {accent_color} !important;
-    }}
+    }
 </style>
 """, unsafe_allow_html=True)
 
