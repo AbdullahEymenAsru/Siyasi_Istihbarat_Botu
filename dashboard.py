@@ -59,7 +59,7 @@ for folder in ["ARSIV", "VEKTOR_DB"]:
 # -- YENİ MANUEL EMBEDDING SINIFI ---
 
 class YerelEmbedder:
-def __init__(self):
+       def __init__(self):
 self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 def **call**(self, input):
 return self.model.encode(input).tolist()
