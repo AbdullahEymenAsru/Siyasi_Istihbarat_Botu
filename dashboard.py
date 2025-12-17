@@ -58,13 +58,19 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# -- API KONTROLLERİ --
+# -- API KONTROLLERİ VE ROTASYON LİSTESİ --
 SITE_URL = "https://siyasi-istihbarat-botu.streamlit.app/"
+
 if "GROQ_API_KEY" not in st.secrets or "SUPABASE_URL" not in st.secrets:
     st.error("API Anahtarları Eksik!")
     st.stop()
 
-client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+# Çift Mühimmat Hattı (Anahtarlar)
+GROQ_KEYS = [
+    st.secrets.get("GROQ_API_KEY"),
+    st.secrets.get("GROQ_API_KEY_2") # Yedek Anahtar
+]
+
 supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
@@ -72,6 +78,33 @@ if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
 # ==========================================
 # 2. ÇEKİRDEK FONKSİYONLAR
 # ==========================================
+
+# --- YENİ: ROTASYONEL AI MOTORU ---
+def ask_ai_with_rotation(messages, model_id):
+    """
+    Seçilen model ile API çağrısı yapar. 
+    Eğer aktif anahtarın kotası dolarsa (429), otomatik olarak yedeğe geçer.
+    """
+    for i, key in enumerate(GROQ_KEYS):
+        if not key: continue # Anahtar tanımlı değilse atla
+        try:
+            # Geçici istemci oluştur
+            temp_client = Groq(api_key=key)
+            return temp_client.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                stream=True
+            )
+        except Exception as e:
+            if "429" in str(e): # Kota Doldu Hatası
+                st.toast(f"⚠️ {i+1}. Mühimmat Hattı Tükendi, Yedek Hatta Geçiliyor...", icon="🔄")
+                continue # Döngüdeki bir sonraki anahtara geç
+            else:
+                st.error(f"Sistem Hatası: {e}")
+                return None
+    
+    st.error("❌ Kritik: Tüm mühimmat (API Anahtarları) tükendi! Yeni anahtar ekleyin.")
+    return None
 
 class YerelEmbedder:
     def __init__(self):
@@ -219,11 +252,26 @@ if not st.session_state.user and not st.session_state.is_guest:
         if st.button("Devam Et >>"): st.session_state.is_guest = True; st.rerun()
     st.stop()
 
-# --- SIDEBAR (OTOMATİK SENKRONİZASYONLU) ---
+# --- SIDEBAR ---
 user_id = st.session_state.user.id if st.session_state.user else "guest"
 user_pass = st.session_state.password_cache
 
-st.sidebar.header("⚙️ SİSTEM")
+st.sidebar.header("⚙️ OPERASYONEL AYARLAR")
+
+# --- YENİ EKLENTİ: AI MODEL SEÇİMİ ---
+model_secimi = st.sidebar.radio(
+    "Analiz Birimi Seçin:",
+    [
+        "🚀 HIZLI (Llama 8B) - Az Token",
+        "🧠 KAPSAMLI (Llama 70B) - Derin Analiz"
+    ],
+    index=1,
+    help="Hızlı model anlık sorgular, Kapsamlı model detaylı raporlar içindir."
+)
+# Model ID Belirleme
+selected_model_id = "llama-3.1-8b-instant" if "HIZLI" in model_secimi else "llama-3.3-70b-versatile"
+
+st.sidebar.divider()
 st_theme = st.sidebar.selectbox("Görünüm", ["Karanlık", "Açık"], index=0 if st.session_state.theme=="Karanlık" else 1, key="st")
 if st_theme != st.session_state.theme: st.session_state.theme = st_theme; st.rerun()
 
@@ -252,7 +300,7 @@ if new_n != st.session_state.current_session_name and new_n:
         buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
     st.rerun()
 
-# --- KRİTİK DÜZELTME: SON SOHBETİ SIFIRLAMA MANTIĞI ---
+# --- SOHBET SIFIRLAMA ---
 if st.sidebar.button("🗑️ İmha Et"):
     current = st.session_state.current_session_name
     # Eğer birden fazla sohbet varsa, sil ve diğerine geç
@@ -264,7 +312,6 @@ if st.sidebar.button("🗑️ İmha Et"):
         st.session_state.chat_sessions[current] = [] 
         st.toast("Kayıtlar yakıldı, sayfa temizlendi.", icon="🔥")
     
-    # Değişikliği anında buluta yaz
     if not st.session_state.is_guest: 
         buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
     st.rerun()
@@ -319,7 +366,7 @@ with col_sag:
         if not st.session_state.is_guest: 
             buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass, sessiz=True)
 
-        with st.status("Veriler analiz ediliyor...") as s:
+        with st.status(f"Analiz ediliyor ({'Hızlı' if '8B' in selected_model_id else 'Kapsamlı'} Model)...") as s:
             arsiv = hafizadan_getir(q)
             web = web_ara(q)
             s.update(label="Stratejik yanıt hazırlanıyor...", state="complete")
@@ -330,16 +377,22 @@ with col_sag:
                 sys_msg = {"role": "system", "content": "Sen Savaş Odası stratejistisin. Raporu ve verileri kullanarak derin analiz yap."}
                 enhanced_q = {"role": "user", "content": f"SORU: {q}\n\n[ARŞİV]:\n{arsiv}\n\n[WEB]:\n{web}"}
                 
+                # --- GÜNCELLENDİ: ROTASYONEL FONKSİYON VE SEÇİLEN MODEL ---
                 try:
-                    stream = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[sys_msg] + msgs[-10:-1] + [enhanced_q], stream=True)
-                    for chunk in stream:
-                        if chunk.choices[0].delta.content:
-                            full += chunk.choices[0].delta.content
-                            ph.markdown(full + "▌")
-                    ph.markdown(full)
-                    msgs.append({"role": "assistant", "content": full})
+                    stream = ask_ai_with_rotation(
+                        [sys_msg] + msgs[-10:-1] + [enhanced_q], 
+                        model_id=selected_model_id
+                    )
                     
-                    if not st.session_state.is_guest: 
-                        buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
+                    if stream:
+                        for chunk in stream:
+                            if chunk.choices[0].delta.content:
+                                full += chunk.choices[0].delta.content
+                                ph.markdown(full + "▌")
+                        ph.markdown(full)
+                        msgs.append({"role": "assistant", "content": full})
                         
-                except Exception as e: st.error(f"Hata: {e}")
+                        if not st.session_state.is_guest: 
+                            buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
+                except Exception as e:
+                    st.error(f"Kritik Hata: {e}")
