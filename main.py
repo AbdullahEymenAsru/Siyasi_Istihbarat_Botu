@@ -53,36 +53,45 @@ def get_email_list():
 ALICI_LISTESI = get_email_list()
 
 # ==========================================
-# 2. İSTİHBARAT KAYNAKLARI (KATEGORİZE EDİLMİŞ)
+# 2. İSTİHBARAT KAYNAKLARI (STRATEJİK + TELEGRAM)
 # ==========================================
 
-# Yeni sistemde kaynakları ikiye ayırıyoruz: Genel ve Stratejik
 RSS_SOURCES = {
     "THINK_TANK": [
         "https://foreignpolicy.com/feed/",
         "https://carnegieendowment.org/rss/solr/get/all",
         "https://www.csis.org/rss/analysis",
-        "https://www.understandingwar.org/feeds.xml", # ISW
-        "https://warontherocks.com/feed/"
+        "https://www.understandingwar.org/feeds.xml", # ISW (Savaş Çalışmaları)
+        "https://warontherocks.com/feed/",
+        "https://www.cfr.org/rss/newsletters/daily-brief", # CFR
+        "https://www.setav.org/feed/" # SETA (Ankara Perspektifi)
     ],
     "NEWS": [
+        "https://www.aa.com.tr/tr/rss/default?cat=guncel", # Anadolu Ajansı
+        "https://www.trthaber.com/dunya_articles.rss", # TRT Haber
         "http://feeds.bbci.co.uk/news/world/rss.xml",
         "https://www.aljazeera.com/xml/rss/all.xml",
         "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best",
-        "https://tass.com/rss/v2.xml", # Rusya
+        "https://tass.com/rss/v2.xml", # Rusya Resmi (TASS)
         "https://thediplomat.com/feed/", # Asya-Pasifik
         "https://www.middleeasteye.net/rss", # Orta Doğu
-        "https://www.chinadaily.com.cn/rss/world_rss.xml" # Çin
+        "https://www.dw.com/xml/rss-tur-dunya" # Avrupa Hattı
+    ],
+    "TELEGRAM_INTEL": [
+        # Not: Telegram RSS köprüleri bazen yavaşlayabilir.
+        "https://rsshub.app/telegram/channel/rybar_en", # RYBAR (Rus İstihbarat/Askeri Analiz - DOĞU KANADI)
+        "https://rsshub.app/telegram/channel/bellingcat", # BELLINGCAT (OSINT Araştırma - BATI KANADI)
+        "https://rsshub.app/telegram/channel/intelslava", # INTEL SLAVA (Rusya/Ukrayna Saha - DOĞU KANADI)
+        "https://rsshub.app/telegram/channel/geopolitics_live", # Jeopolitik Özetler (KÜRESEL)
     ]
 }
 
 # ==========================================
-# 3. VERİ TOPLAMA VE FİLTRELEME (YENİ MANTIK)
+# 3. VERİ TOPLAMA VE FİLTRELEME
 # ==========================================
 
 def get_full_text(url):
-    """Linkteki haberin tam metnini çeker (Özet yetersizse)"""
-    # Hatalı markdown linki düzeltildi: [t.me](http://t.me/) -> "t.me"
+    """Linkteki haberin tam metnini çeker."""
     if "t.me" in url or "telegram" in url or ".pdf" in url: return None
     try:
         downloaded = trafilatura.fetch_url(url)
@@ -100,37 +109,51 @@ def fetch_news():
     # --- TEKRAR ÖNLEME PROTOKOLÜ (SUPABASE) ---
     try:
         past_24h = datetime.datetime.now() - datetime.timedelta(hours=24)
-        # Son 24 saatteki raporların içeriğini çekiyoruz
         response = supabase.table("reports").select("content").gte("created_at", past_24h.isoformat()).execute()
         past_content = str(response.data)
     except Exception as e:
         print(f"⚠️ Geçmiş kontrol hatası: {e}")
         past_content = ""
 
-    # 1. THINK TANK TARAMASI (Zorunlu ve Öncelikli)
+    # 1. THINK TANK TARAMASI (Zorunlu)
     print("🧠 Think-Tank kaynakları taranıyor...")
     for url in RSS_SOURCES["THINK_TANK"]:
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:2]: # Her kaynaktan en yeni 2 makale
+            for entry in feed.entries[:2]:
                 if entry.link not in past_content:
-                    # Mümkünse tam metni al, yoksa özeti
                     full_content = get_full_text(entry.link)
                     summary = full_content if full_content else entry.get('summary', '')[:500]
-
-                    news_items.append(f"SOURCE_TYPE: THINK_TANK | SOURCE: {feed.feed.get('title', 'ThinkTank')} | TITLE: {entry.title} | LINK: {entry.link} | CONTENT: {summary}")
-                    raw_links_html += f"<li><a href='{entry.link}' style='color:#c0392b; font-weight:bold;'>[THINK TANK] {entry.title}</a> - {feed.feed.get('title', 'Source')}</li>"
+                    news_items.append(f"TYPE: ACADEMIC_INTEL | SOURCE: {feed.feed.get('title', 'ThinkTank')} | TITLE: {entry.title} | LINK: {entry.link} | CONTENT: {summary}")
+                    raw_links_html += f"<li><a href='{entry.link}' style='color:#c0392b; font-weight:bold;'>[STRATEJİ] {entry.title}</a></li>"
         except: continue
 
-    # 2. GENEL HABER TARAMASI
+    # 2. TELEGRAM İSTİHBARAT TARAMASI
+    print("📡 Telegram hatları dinleniyor...")
+    for url in RSS_SOURCES["TELEGRAM_INTEL"]:
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:2]: # Her kanaldan son 2 mesaj
+                # Telegram mesajları genellikle kısadır, başlık bazen olmaz
+                title = entry.title if 'title' in entry else "Telegram Intel"
+                desc = entry.description if 'description' in entry else ""
+                
+                # HTML taglerini temizle
+                clean_desc = re.sub('<[^<]+?>', '', desc)[:1000]
+                
+                news_items.append(f"TYPE: FIELD_INTEL (TELEGRAM) | SOURCE: {feed.feed.get('title', 'Telegram')} | CONTENT: {clean_desc}")
+                # Telegram linklerini eklemiyoruz (spam olmaması için), sadece analize sokuyoruz.
+        except: continue
+
+    # 3. GENEL HABER TARAMASI
     print("🌍 Küresel haber kaynakları taranıyor...")
     for url in RSS_SOURCES["NEWS"]:
         try:
             feed = feedparser.parse(url)
             for entry in feed.entries[:3]:
                 if entry.link not in past_content:
-                    news_items.append(f"SOURCE_TYPE: NEWS | SOURCE: {feed.feed.get('title', 'News')} | TITLE: {entry.title} | LINK: {entry.link} | SUMMARY: {entry.get('summary', '')[:300]}")
-                    raw_links_html += f"<li><a href='{entry.link}' style='color:#2980b9;'>{entry.title}</a> - {feed.feed.get('title', 'Source')}</li>"
+                    news_items.append(f"TYPE: OPEN_SOURCE | SOURCE: {feed.feed.get('title', 'News')} | TITLE: {entry.title} | LINK: {entry.link} | SUMMARY: {entry.get('summary', '')[:300]}")
+                    raw_links_html += f"<li><a href='{entry.link}' style='color:#2980b9;'>{entry.title}</a></li>"
         except: continue
 
     combined_data = "\n\n".join(news_items)
@@ -143,12 +166,10 @@ def fetch_news():
 def get_historical_context():
     print("📚 Arşiv kayıtları ve tarihsel hafıza taranıyor...")
     try:
-        # Son 15 raporu çekerek geniş bir hafıza oluşturuyoruz
         response = supabase.table("reports").select("content, created_at").order("created_at", desc=True).limit(15).execute()
         context_text = ""
         for row in response.data:
             date = row['created_at'].split('T')[0]
-            # Raporun tamamını değil, özet kısmını veya başlarını alıyoruz ki token dolmasın
             context_text += f"--- RAPOR TARİHİ: {date} ---\n{row['content'][:800]}\n\n"
         return context_text
     except Exception as e:
@@ -185,57 +206,52 @@ def draw_network_graph(text_data):
     return filename
 
 # ==========================================
-# 6. ANALİZ VE RAPORLAMA (YENİ GÜÇLÜ PROMPT)
+# 6. AKADEMİK ANALİZ VE RAPORLAMA (DOKTRİNER MOD)
 # ==========================================
 
 def run_agent_workflow(current_data, historical_memory):
-    print("✍️ BAŞ STRATEJİST: Derin analiz protokolü çalıştırılıyor...")
+    print("✍️ BAŞ STRATEJİST: Akademik disiplin ve doktriner analiz başlatıldı...")
     today = datetime.datetime.now().strftime("%d %B %Y")
 
     system_prompt = f"""
-    Sen 'Savaş Odası'nın Baş İstihbarat Analistisin. Görevin, sağlanan açık kaynak verilerini (OSINT) analiz ederek Konsey Üyelerine stratejik derinliği olan bir rapor sunmaktır.
+    Sen 'Küresel Savaş Odası'nın Baş Jeopolitik Analisti ve Strateji Uzmanısın. Çıktıların, karar vericilere sunulan bir 'Akademik İstihbarat Brifingi' (Academic Intelligence Briefing) niteliğinde olmalıdır.
 
-    **GÖREV KURALLARI (ZORUNLU):**
-    1. **DERİNLİK & MAKİNE ÖĞRENİMİ:** Haberleri sakın tek cümleyle geçme. 'Hafıza' kısmında verilen geçmiş raporları oku. Eğer bir olay (örn: Suriye) geçen hafta da varsa, "Geçen haftaki raporumuzda belirttiğimiz X durumu, bugün Y'ye evrildi" diyerek süreklilik kur.
-    2. **KAYNAK FORMATI:** Metin içinde ASLA "(Kaynak)" veya "(Source)" yazma. Haberin kaynağını cümlenin içine yedir.
-       - Yanlış: "ABD yaptırım uyguladı. (Kaynak)"
-       - Doğru: "Al Jazeera'nin aktardığına göre ABD, bölgedeki..." veya "[Reuters]: Moskova'nın açıklamasına göre..."
-    3. **LİNKLER:** Linkleri metin içine gömme. Referansları raporun sonundaki özel bölüme bırakacağız. Ancak metin içinde akademik teori kullanırsan [Realizm] gibi belirt.
-    4. **THINK TANK ZORUNLULUĞU:** "Think-Tank Köşesi" bölümünde, sağlanan verilerdeki Foreign Policy, ISW veya Carnegie raporlarından en az birini detaylıca yorumla.
+    **AKADEMİK DİSİPLİN PROTOKOLLERİ:**
+    1. **KAVRAMSAL ÇERÇEVE:** Analizlerini Realizm (Güç Dengesi), Liberalizm (Karşılıklı Bağımlılık) ve Jeopolitik Determinizm (Coğrafi Etkiler) ekseninde kur. "Haber" değil, "Olayların Yapısal Analizini" sun.
+    2. **TERMINOLOJİ:** Popüler dil yerine teknik terminoloji kullan. (Örn: 'Savaş çıkabilir' yerine 'Güvenlik ikilemi (Security Dilemma) tırmanmaktadır', 'Dengeler değişti' yerine 'Kutup sisteminde asimetrik kayma gözlenmektedir').
+    3. **SENTETİK HAFIZA:** Hafızadaki verileri istatistiksel ve kronolojik bir trend analizi olarak kullan. Olayları tekil değil, bir sürecin parçası olarak değerlendir.
+    4. **DİYALEKTİK YAKLAŞIM:** Her hamleyi 'Etki-Tepki' (Action-Reaction) mekanizmasıyla açıkla.
 
-    **ÇIKTI FORMATI (HTML KODU OLARAK VER - SADECE BODY KISMI):**
-    Lütfen çıktıyı doğrudan HTML formatında ver, çünkü bu bir e-posta olacak. CSS kullanma, inline style kullan.
+    **RAPOR YAPISI (ZORUNLU HTML):**
+    Analizi 'Georgia' fontuyla, profesyonel bir memorandum formatında sun.
 
-    Yapı şöyle olmalı:
-
-    <div style="font-family: Georgia, serif; color: #333;">
-
-        <div style="background-color: #fdf2f0; border-left: 5px solid #c0392b; padding: 15px; margin-bottom: 20px;">
-            <h2 style="color: #c0392b; margin-top: 0;">🚨 KIRMIZI ALARM (Sıcak Çatışma & Riskler)</h2>
-            <p>(Burada en kritik 2 konuyu, tarihsel bağlamıyla en az 2'şer paragraf analiz et.)</p>
+    <div style="font-family: 'Georgia', serif; line-height: 1.8; color: #1a1a1a; max-width: 800px; margin: auto;">
+        <div style="text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; margin-bottom: 30px;">
+            <h1 style="color: #2c3e50; text-transform: uppercase; margin: 0;">Jeopolitik Durum Değerlendirmesi</h1>
+            <p style="font-size: 13px; color: #7f8c8d;">Doktriner Analiz Birimi | Rapor No: {today.replace(' ', '-')}</p>
         </div>
 
-        <h3 style="color: #2980b9; border-bottom: 2px solid #2980b9; padding-bottom: 5px;">🌍 KÜRESEL UFUK TURU</h3>
-        <p>(Haberleri bölgelere göre başlıklandır: <b>Orta Doğu:</b>, <b>Asya-Pasifik:</b> gibi. Kaynak isimlerini metne yedirerek analiz et.)</p>
+        <h2 style="color: #c0392b; border-left: 4px solid #c0392b; padding-left: 10px; font-variant: small-caps;">I. Stratejik Kırılma Noktaları (Kritik Analiz)</h2>
+        <p>(En önemli olayları 'Uluslararası Sistem' üzerindeki etkileriyle analiz et. Realist güç teorilerini uygula.)</p>
 
-        <div style="background-color: #eaf2f8; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <h3 style="color: #2c3e50; margin-top: 0;">🧠 THINK-TANK KÖŞESİ (Derin Okuma)</h3>
-            <p>(Seçilen Think-Tank raporunun analizi ve Ankara için anlamı.)</p>
+        <h2 style="color: #2980b9; border-left: 4px solid #2980b9; padding-left: 10px; font-variant: small-caps;">II. Bölgesel Güç Projeksiyonları</h2>
+        <p>(Aktörlerin hareketlerini 'Sıfır Toplamlı Oyun' (Zero-Sum Game) perspektifiyle açıkla.)</p>
+
+        <div style="background-color: #f9f9f9; padding: 25px; border-top: 1px solid #eee; border-bottom: 1px solid #eee; margin: 25px 0;">
+            <h3 style="color: #2c3e50; margin-top: 0; font-style: italic;">📓 Doktriner Referans (Think-Tank & Teori)</h3>
+            <p>(Think-Tank verilerini, akademik bir makale özeti ciddiyetinde yorumla.)</p>
         </div>
 
-        <h3 style="color: #27ae60;">🔮 GELECEK SENARYOLARI & POLİTİKA ÖNERİSİ</h3>
-        <p>(1 ay sonra ne olur? Türkiye ne yapmalı?)</p>
-
+        <h2 style="color: #27ae60; border-left: 4px solid #27ae60; padding-left: 10px; font-variant: small-caps;">III. Projeksiyon ve Stratejik Tavsiye</h2>
+        <p>(Kısa ve orta vadeli öngörüleri rasyonel seçim teorisi üzerinden sun.)</p>
+        
+        <div style="text-align: right; font-size: 11px; color: #bdc3c7; margin-top: 40px;">
+            Savaş Odası Yapay Zeka Strateji Modülü tarafından otomatik olarak derlenmiştir.
+        </div>
     </div>
     """
 
-    user_content = f"""
-    GEÇMİŞ RAPORLAR (HAFIZA):
-    {historical_memory}
-
-    BUGÜNKÜ HAM İSTİHBARAT VERİLERİ:
-    {current_data}
-    """
+    user_content = f"GEÇMİŞ HAFIZA:\n{historical_memory}\n\nGÜNCEL VERİLER:\n{current_data}"
 
     completion = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -243,8 +259,8 @@ def run_agent_workflow(current_data, historical_memory):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
         ],
-        temperature=0.6,
-        max_tokens=3500, # Uzun ve detaylı analiz için artırıldı
+        temperature=0.3, # Daha düşük sıcaklık = Daha tutarlı ve ciddi analiz
+        max_tokens=4000
     )
 
     return completion.choices[0].message.content
@@ -259,10 +275,8 @@ async def generate_voice(text, output_file):
 
 def create_audio_summary(report_html):
     print("🎙️ Sesli brifing hazırlanıyor...")
-    # HTML etiketlerini temizle
     clean_text = re.sub('<[^<]+?>', '', report_html)
     clean_text = clean_text.replace(" ", " ").replace("\n", " ")
-    # İlk 1500 karakteri seslendir (Çok uzun olmaması için)
     script = "Savaş Odası Günlük İstihbarat Raporu. " + clean_text[:1500] + "... Raporun tamamı e-postadadır."
     filename = "Gunluk_Brifing.mp3"
     try:
@@ -271,7 +285,6 @@ def create_audio_summary(report_html):
     except: return None
 
 def archive_report(content_html, raw_links):
-    # 1. Supabase'e Kaydet (Yapılandırılmış Veri)
     try:
         data = {"content": content_html, "created_at": datetime.datetime.now().isoformat()}
         supabase.table("reports").insert(data).execute()
@@ -279,7 +292,6 @@ def archive_report(content_html, raw_links):
     except Exception as e:
         print(f"❌ Supabase kayıt hatası: {e}")
 
-    # 2. GitHub/Markdown Olarak Kaydet (Yedek)
     tr_time = datetime.datetime.now() + datetime.timedelta(hours=3)
     date_str = tr_time.strftime("%Y-%m-%d_%H-%M")
     path = f"ARSIV/Analiz_{date_str}.md"
@@ -288,7 +300,6 @@ def archive_report(content_html, raw_links):
     with open(path, "w", encoding="utf-8") as f:
         f.write(content_html + "\n\n" + raw_links)
 
-    # GitHub Push (Opsiyonel - Eğer token varsa çalışır)
     try:
         subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"])
         subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"])
@@ -304,7 +315,7 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
 
     print(f"📧 Dağıtım Başladı: {len(ALICI_LISTESI)} alıcı.")
     
-    # --- DÜZELTME BURADA YAPILDI: Saf URL formatı ---
+    # --- DÜZELTME: Saf URL formatı (Markdown değil) ---
     CANLI_DASHBOARD_LINKI = "https://siyasi-istihbarat-botu.streamlit.app/"
 
     try:
@@ -318,19 +329,18 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
             msg = MIMEMultipart('related')
             msg['From'] = GMAIL_USER
             msg['To'] = alici
-            msg['Subject'] = f"🛡️ SAVAŞ ODASI: Stratejik Derinlik - {tr_today}"
+            msg['Subject'] = f"🛡️ SAVAŞ ODASI: Stratejik Durum - {tr_today}"
 
             msg_alternative = MIMEMultipart('alternative')
             msg.attach(msg_alternative)
 
-            # HTML Şablonu
             full_html = f"""
             <html><body style='font-family: "Georgia", serif; color:#222; background-color: #f4f4f4; padding: 20px;'>
-                <div style="max-width: 800px; margin: auto; background: white; padding: 40px; border-radius: 8px; border-top: 6px solid #c0392b;">
+                <div style="max-width: 800px; margin: auto; background: white; padding: 40px; border-radius: 8px; border-top: 6px solid #2c3e50;">
 
                     <div style="text-align: center; margin-bottom: 30px;">
-                        <h1 style="color:#2c3e50; font-family: 'Impact', sans-serif; letter-spacing: 1px; margin:0;">SAVAŞ ODASI</h1>
-                        <p style="color:#7f8c8d; font-style: italic; margin-top: 5px;">"Veri değil, İstihbarat."</p>
+                        <h1 style="color:#2c3e50; font-family: 'Times New Roman', serif; letter-spacing: 1px; margin:0;">KÜRESEL SAVAŞ ODASI</h1>
+                        <p style="color:#7f8c8d; font-style: italic; margin-top: 5px;">"Stratejik İstihbarat Merkezi"</p>
                     </div>
 
                     <div style="text-align:center; margin-bottom: 20px;">
@@ -360,7 +370,6 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
 
             msg_alternative.attach(MIMEText(full_html, 'html'))
 
-            # Resmi Ekle
             if image_file and os.path.exists(image_file):
                 with open(image_file, 'rb') as f:
                     img = MIMEImage(f.read())
@@ -368,7 +377,6 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
                     img.add_header('Content-Disposition', 'inline', filename=image_file)
                     msg.attach(img)
 
-            # Sesi Ekle
             if audio_file and os.path.exists(audio_file):
                 with open(audio_file, "rb") as f:
                     part = MIMEBase('application', 'octet-stream')
@@ -389,22 +397,14 @@ def send_email_to_council(report_body, raw_links, audio_file, image_file):
 # ==========================================
 
 if __name__ == "__main__":
-    # 1. Veri Topla
     news_data, links_html = fetch_news()
 
     if not news_data:
-        print("⚠️ Yeterli yeni veri bulunamadı. Operasyon durduruluyor (Tekrarı önlemek için).")
+        print("⚠️ Yeterli yeni veri bulunamadı. Operasyon durduruluyor.")
     else:
-        # 2. Hafızayı Çağır
         memory = get_historical_context()
-
-        # 3. Analiz Et (Yeni Prompt ile)
         report_html = run_agent_workflow(news_data, memory)
-
-        # 4. Görselleri ve Sesi Hazırla
         graph_file = draw_network_graph(news_data)
         audio_file = create_audio_summary(report_html)
-
-        # 5. Kaydet ve Gönder
         archive_report(report_html, links_html)
         send_email_to_council(report_html, links_html, audio_file, graph_file)
