@@ -397,72 +397,88 @@ if files:
     sec = st.sidebar.radio("🗄️ Rapor Arşivi", files)
     with open(f"ARSIV/{sec}", "r", encoding="utf-8") as f: secilen_icerik = f.read()
 
-# --- ANA EKRAN ---
+# --- ANA EKRAN (YAN YANA DÜZEN) ---
 st.title("☁️ KÜRESEL SAVAŞ ODASI")
 with st.spinner("Sistem Hazırlanıyor..."): hafizayi_guncelle()
 
-# Sadece Rapor ve Chat Sekmeleri (Harita Kaldırıldı)
-t1, t2 = st.tabs(["📄 RAPOR", "🧠 HİBRİT CHAT"])
+# Ekranı iki ana sütuna bölüyoruz: %55 Rapor, %45 Chat
+col_rapor, col_chat = st.columns([55, 45], gap="medium")
 
-with t1:
-    if "`html" in secilen_icerik: secilen_icerik = re.sub(r"`html", "", secilen_icerik)
-    secilen_icerik = re.sub(r"```", "", secilen_icerik)
-    st.info(f"📂 Görüntülenen Rapor: {sec}")
-    components.html(secilen_icerik, height=800, scrolling=True)
+# --- SOL SÜTUN: RAPOR GÖRÜNÜMÜ ---
+with col_rapor:
+    st.subheader(f"📄 İstihbarat Raporu: {sec if files else 'Veri Yok'}")
+    if secilen_icerik != "Veri yok":
+        # HTML temizliği
+        clean_html = re.sub(r"```html|```", "", secilen_icerik)
+        # Raporu kaydırılabilir bir kutu içinde göster
+        st.components.v1.html(clean_html, height=1000, scrolling=True)
+    else:
+        st.info("Arşivde görüntülenecek rapor bulunamadı.")
 
-with t2:
-    st.subheader(f"💬 Kanal: {st.session_state.current_session_name}")
+# --- SAĞ SÜTUN: STRATEJİK CHAT ---
+with col_chat:
+    st.subheader(f"🧠 Kanal: {st.session_state.current_session_name}")
+    
+    # Sohbet geçmişini göstermek için bir konteyner
+    chat_container = st.container(height=850)
     
     current_messages = st.session_state.chat_sessions[st.session_state.current_session_name]
 
-    for m in current_messages:
-        with st.chat_message(m["role"]): st.markdown(m["content"])
+    with chat_container:
+        for m in current_messages:
+            with st.chat_message(m["role"]): 
+                st.markdown(m["content"])
 
-    if q := st.chat_input("Emriniz?"):
-        current_messages.append({"role":"user","content":q})
-        with st.chat_message("user"): st.markdown(q)
+    # Chat girişi
+    if q := st.chat_input("Rapor hakkında analiz isteyin veya emredin..."):
+        # Kullanıcı mesajını ekle ve göster
+        current_messages.append({"role": "user", "content": q})
+        with chat_container:
+            with st.chat_message("user"): st.markdown(q)
         
-        # Anlık Kayıt
+        # Kayıt (Ziyaretçi değilse)
         if not st.session_state.is_guest:
              buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
 
+        # Bilgi toplama aşaması
         with st.status("İstihbarat toplanıyor...") as s:
             arsiv = hafizadan_getir(q)
             web = web_ara(q)
-            s.update(label="Veriler analiz ediliyor...", state="complete")
+            s.update(label="Analiz ediliyor...", state="complete")
 
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
-            
-            recent_history = current_messages[-10:]
-            enriched_last_message = {
-                "role": "user",
-                "content": f"SORU: {q}\n\n[SİSTEM BİLGİSİ - ARŞİV]:\n{arsiv}\n\n[SİSTEM BİLGİSİ - WEB]:\n{web}"
-            }
-            api_messages = [
-                {"role": "system", "content": "Sen Savaş Odası stratejistisin. Arşiv ve Web verilerini kullanarak derinlikli analiz yap."}
-            ] + recent_history[:-1] + [enriched_last_message]
-
-            try:
-                stream = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=api_messages,
-                    stream=True,
-                    temperature=0.6,
-                    max_tokens=1024
-                )
-                for chunk in stream:
-                    if chunk.choices[0].delta.content:
-                        full_response += chunk.choices[0].delta.content
-                        message_placeholder.markdown(full_response + "▌")
-                message_placeholder.markdown(full_response)
+        # Asistan yanıtı
+        with chat_container:
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                full_response = ""
                 
-                current_messages.append({"role":"assistant","content":full_response})
+                recent_history = current_messages[-10:]
+                enriched_last_message = {
+                    "role": "user",
+                    "content": f"SORU: {q}\n\n[SİSTEM BİLGİSİ - ARŞİV]:\n{arsiv}\n\n[SİSTEM BİLGİSİ - WEB]:\n{web}"
+                }
+                api_messages = [
+                    {"role": "system", "content": "Sen Savaş Odası stratejistisin. Yan taraftaki raporu ve arşiv verilerini kullanarak derinlemesine analiz yap."}
+                ] + recent_history[:-1] + [enriched_last_message]
 
-                # Yanıt Sonrası Kayıt
-                if not st.session_state.is_guest:
-                    buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
+                try:
+                    stream = client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=api_messages,
+                        stream=True,
+                        temperature=0.6,
+                        max_tokens=1024
+                    )
+                    for chunk in stream:
+                        if chunk.choices[0].delta.content:
+                            full_response += chunk.choices[0].delta.content
+                            message_placeholder.markdown(full_response + "▌")
+                    message_placeholder.markdown(full_response)
                     
-            except Exception as e:
-                st.error(f"Hata oluştu: {e}")
+                    current_messages.append({"role": "assistant", "content": full_response})
+
+                    # Final Kayıt
+                    if not st.session_state.is_guest:
+                        buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
+                except Exception as e:
+                    st.error(f"Bağlantı hatası: {e}")
