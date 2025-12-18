@@ -98,33 +98,23 @@ AYLAR = {
 GUNLER = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
 
 def ask_ai_with_rotation(messages, model_id):
-    """
-    Seçilen model ile API çağrısı yapar. Kota dolarsa yedeğe geçer.
-    """
+    """Kota dolduğunda otomatik olarak diğer anahtara geçer."""
     for i, key in enumerate(GROQ_KEYS):
         if not key: continue
         try:
             temp_client = Groq(api_key=key)
-            return temp_client.chat.completions.create(
-                model=model_id,
-                messages=messages,
-                stream=True
-            )
+            return temp_client.chat.completions.create(model=model_id, messages=messages, stream=True)
         except Exception as e:
-            if "429" in str(e): # Kota Doldu
-                st.toast(f"⚠️ {i+1}. Mühimmat Hattı Tükendi, Yedek Hatta Geçiliyor...", icon="🔄")
+            if "429" in str(e): 
+                st.toast(f"⚠️ {i+1}. Hat Tükendi, Yedek Hat...", icon="🔄")
                 continue
-            else:
-                st.error(f"Sistem Hatası: {e}")
-                return None
-    st.error("❌ Kritik: Tüm API mühimmatı tükendi!")
+            return None
     return None
 
 class YerelEmbedder:
     def __init__(self):
         self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
     def __call__(self, input): return self.model.encode(input).tolist()
-    def name(self): return "YerelEmbedder"
 
 def anahtar_turet(password):
     kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=b'SavasOdasiSabitTuz', iterations=100000)
@@ -173,36 +163,27 @@ def buluta_kaydet(user_id, data, password, sessiz=False):
     try:
         sifreli = sifrele(data, password)
         if sifreli:
-            supabase.table("chat_logs").upsert(
-                {"user_id": user_id, "messages": {"encrypted_data": sifreli}}, 
-                on_conflict="user_id"
-            ).execute()
+            supabase.table("chat_logs").upsert({"user_id": user_id, "messages": {"encrypted_data": sifreli}}, on_conflict="user_id").execute()
             if not sessiz: st.toast("✅ Veriler Senkronize Edildi", icon="☁️")
-    except Exception as e: 
-        if not sessiz: st.error(f"Kayıt Hatası: {e}")
+    except: pass
 
 @st.cache_resource
 def get_chroma_v4(): return chromadb.EphemeralClient()
-@st.cache_resource
-def get_embedder_v4(): return YerelEmbedder()
 
 def hafizayi_guncelle():
     try:
-        chroma = get_chroma_v4()
-        ef = get_embedder_v4()
-        col = chroma.get_or_create_collection(name="savas_odasi_ram_v4", embedding_function=ef)
+        col = get_chroma_v4().get_or_create_collection(name="savas_odasi_ram_v4", embedding_function=YerelEmbedder())
         for d in glob.glob("ARSIV/*.md"):
             try:
                 adi = os.path.basename(d)
                 if not col.get(ids=[adi])['ids']:
-                    with open(d, "r", encoding="utf-8") as f: 
-                        col.add(documents=[f.read()], ids=[adi], metadatas=[{"source": adi}])
+                    with open(d, "r", encoding="utf-8") as f: col.add(documents=[f.read()], ids=[adi], metadatas=[{"source": adi}])
             except: pass
     except: pass
 
 def hafizadan_getir(soru):
     try:
-        res = get_chroma_v4().get_collection(name="savas_odasi_ram_v4", embedding_function=get_embedder_v4()).query(query_texts=[soru], n_results=3)
+        res = get_chroma_v4().get_collection(name="savas_odasi_ram_v4", embedding_function=YerelEmbedder()).query(query_texts=[soru], n_results=3)
         return "\n".join(res['documents'][0]) if res['documents'] else ""
     except: return ""
 
@@ -221,44 +202,24 @@ if "is_guest" not in st.session_state: st.session_state.is_guest = False
 if "password_cache" not in st.session_state: st.session_state.password_cache = None
 if "chat_sessions" not in st.session_state: st.session_state.chat_sessions = {"Genel Strateji": []}
 if "current_session_name" not in st.session_state: st.session_state.current_session_name = "Genel Strateji"
-if "model_mode" not in st.session_state: st.session_state.model_mode = "deep" # Varsayılan: Derin
+if "model_mode" not in st.session_state: st.session_state.model_mode = "deep"
 
-# --- GİRİŞ EKRANI ---
+# --- GİRİŞ ---
 if not st.session_state.user and not st.session_state.is_guest:
     st.title("🔐 SAVAŞ ODASI: GİRİŞ")
-    
-    if "type" in st.query_params and st.query_params["type"] == "recovery":
-        st.info("🔄 Şifre Sıfırlama")
-        new_pass_reset = st.text_input("Yeni Şifre", type="password")
-        if st.button("Güncelle"):
-            try:
-                supabase.auth.update_user({"password": new_pass_reset})
-                st.success("Güncellendi!")
-            except Exception as e: st.error(f"Hata: {e}")
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("🔑 Personel Girişi")
+    col1, col2 = st.columns(2)
+    with col1:
         e = st.text_input("E-posta", key="le")
         p = st.text_input("Şifre", type="password", key="lp")
         if st.button("Giriş Yap"):
-            try:
-                u = supabase.auth.sign_in_with_password({"email": e, "password": p}).user
-                if u:
-                    st.session_state.user, st.session_state.password_cache = u, p
-                    d = buluttan_yukle(u.id, p)
-                    if d: st.session_state.chat_sessions = d; st.session_state.current_session_name = list(d.keys())[0]
-                    st.rerun()
-            except: st.error("Hatalı giriş.")
-        
-        with st.expander("Kayıt / Şifre"):
-            ne, np = st.text_input("E-posta"), st.text_input("Şifre", type="password")
-            if st.button("Kayıt Ol"): kayit_ol(ne, np)
-            if st.button("Şifremi Unuttum"): sifre_sifirla(ne)
-
-    with c2:
-        st.subheader("🕵️ Misafir")
-        if st.button("Devam Et >>"): st.session_state.is_guest = True; st.rerun()
+            u = giris_yap(e, p)
+            if u:
+                st.session_state.user, st.session_state.password_cache = u, p
+                d = buluttan_yukle(u.id, p)
+                if d: st.session_state.chat_sessions = d; st.session_state.current_session_name = list(d.keys())[0]
+                st.rerun()
+    with col2:
+        if st.button("Misafir Devam Et >>"): st.session_state.is_guest = True; st.rerun()
     st.stop()
 
 # --- SIDEBAR: ULTRA ESNEK ARŞİV SİSTEMİ ---
@@ -347,18 +308,7 @@ with st.sidebar:
     st.header("💬 SOHBET YÖNETİMİ")
     if st.button("➕ YENİ SOHBET"):
         n = f"Op_{datetime.now().strftime('%H%M%S')}"
-        st.session_state.chat_sessions[n] = []
-        st.session_state.current_session_name = n
-        st.rerun()
-    
-    sess_list = list(st.session_state.chat_sessions.keys())
-    sel_sess = st.selectbox("Geçmiş", sess_list, index=sess_list.index(st.session_state.current_session_name))
-    if sel_sess != st.session_state.current_session_name: st.session_state.current_session_name = sel_sess; st.rerun()
-    
-    if st.button("🗑️ İmha Et"):
-        if len(st.session_state.chat_sessions) > 1: del st.session_state.chat_sessions[st.session_state.current_session_name]; st.session_state.current_session_name = list(st.session_state.chat_sessions.keys())[0]
-        else: st.session_state.chat_sessions[st.session_state.current_session_name] = []
-        st.rerun()
+        st.session_state.chat_sessions[n] = []; st.session_state.current_session_name = n; st.rerun()
     
     if st.button("🚪 Çıkış"): st.session_state.clear(); st.rerun()
 
@@ -369,74 +319,62 @@ with st.spinner("Hafıza Güncelleniyor..."): hafizayi_guncelle()
 col_sol, col_sag = st.columns([55, 45], gap="medium")
 
 with col_sol:
-    st.subheader(f"📄 Rapor: {rep}")
+    st.subheader(f"📄 Rapor Görünümü")
+    st.caption(rep)
     c_clean = re.sub(r"```html|```", "", secilen_icerik)
     components.html(c_clean, height=900, scrolling=True)
 
 with col_sag:
-    st.markdown("### 🧠 ANALİZ MERKEZİ")
+    st.markdown("### 🧠 ANALİZ STRATEJİSİ")
     m1, m2 = st.columns(2)
     with m1:
-        if st.button("🚀 SERİ MÜDAHALE\n(Hızlı & Az Tüketim)", use_container_width=True):
+        if st.button("🚀 SERİ MÜDAHALE\n(Hızlı & Az Mühimmat)", use_container_width=True):
             st.session_state.model_mode = "fast"; st.toast("Hızlı Moda Geçildi.")
     with m2:
-        if st.button("🔬 DERİN STRATEJİ\n(Detaylı & Yüksek Tüketim)", use_container_width=True):
+        if st.button("🔬 DERİN STRATEJİ\n(Detaylı & Çok Mühimmat)", use_container_width=True):
             st.session_state.model_mode = "deep"; st.toast("Derin Strateji Aktif.")
     
-    current_model = "llama-3.1-8b-instant" if st.session_state.model_mode == "fast" else "llama-3.3-70b-versatile"
-    current_label = "⚡ SERİ MÜDAHALE" if st.session_state.model_mode == "fast" else "🔬 DERİN STRATEJİ"
+    # --- HATAYI ÖNLEYEN VE SEÇİMİ SABİTLEYEN KRİTİK BÖLGE ---
+    if st.session_state.model_mode == "fast":
+        selected_model_id = "llama-3.1-8b-instant"
+        current_mode_label = "⚡ SERİ MÜDAHALE"
+    else:
+        # Varsayılan mod
+        selected_model_id = "llama-3.3-70b-versatile"
+        current_mode_label = "🔬 DERİN STRATEJİ"
     
-    st.caption(f"Aktif Birim: **{current_label}**")
+    st.caption(f"Aktif Birim: **{current_mode_label}**")
     st.divider()
-
-    st.subheader(f"📡 Kanal: {st.session_state.current_session_name}")
-    chat_container = st.container(height=650)
+    
+    chat_box = st.container(height=650)
     msgs = st.session_state.chat_sessions[st.session_state.current_session_name]
     
-    with chat_container:
+    with chat_box:
         for m in msgs:
-            # Görsel Etiket: Hangi model kullanıldı?
             if m["role"] == "assistant" and "mode" in m:
                 st.markdown(f"<div class='model-tag'>{m['mode']}</div>", unsafe_allow_html=True)
             with st.chat_message(m["role"]): st.markdown(m["content"])
 
-    # 4. MESAJ GÖNDERME
     if q := st.chat_input("Analiz emredin..."):
         msgs.append({"role": "user", "content": q})
-        chat_container.chat_message("user").markdown(q)
+        chat_box.chat_message("user").markdown(q)
         
-        if not st.session_state.is_guest: 
-            buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass, sessiz=True)
-
-        with st.status("Veriler işleniyor...") as s:
-            arsiv = hafizadan_getir(q)
-            web = web_ara(q)
-            s.update(label="Stratejik yanıt oluşturuluyor...", state="complete")
-        
-        with chat_container:
-            with st.chat_message("assistant"):
-                ph, full = st.empty(), ""
-                sys_msg = {"role": "system", "content": "Sen Savaş Odası stratejistisin. Raporu ve verileri kullanarak doktriner analiz yap."}
-                enhanced_q = {"role": "user", "content": f"SORU: {q}\n\n[ARŞİV]:\n{arsiv}\n\n[WEB]:\n{web}"}
-                
-                # Çift API Rotasyonu ile Çağrı
-                try:
-                    stream = ask_ai_with_rotation(
-                        [sys_msg] + msgs[-8:-1] + [enhanced_q], 
-                        model_id=selected_model_id
-                    )
-                    
-                    if stream:
-                        for chunk in stream:
-                            if chunk.choices[0].delta.content:
-                                full += chunk.choices[0].delta.content
-                                ph.markdown(full + "▌")
-                        ph.markdown(full)
-                        
-                        # Mod etiketiyle kaydet
-                        msgs.append({"role": "assistant", "content": full, "mode": current_label})
-                        
-                        if not st.session_state.is_guest: 
-                            buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass)
-                except Exception as e:
-                    st.error(f"Operasyon Hatası: {e}")
+        with chat_box.chat_message("assistant"):
+            ph, full = st.empty(), ""
+            with st.status("Veriler analiz ediliyor...") as s:
+                arsiv_context = hafizadan_getir(q)
+                web_context = web_ara(q)
+                s.update(label="Stratejik yanıt hazırlanıyor...", state="complete")
+            
+            prompt_context = f"SORU: {q}\n\n[ARŞİV]:\n{arsiv_context}\n\n[WEB]:\n{web_context}"
+            stream = ask_ai_with_rotation([{"role": "system", "content": "Sen Savaş Odası stratejistisin."}, {"role": "user", "content": prompt_context}], selected_model_id)
+            
+            if stream:
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        full += chunk.choices[0].delta.content
+                        ph.markdown(full + "▌")
+                ph.markdown(full)
+                msgs.append({"role": "assistant", "content": full, "mode": current_mode_label})
+                if not st.session_state.is_guest: buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass, sessiz=True)
+                st.rerun()
