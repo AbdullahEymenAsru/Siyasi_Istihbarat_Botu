@@ -21,7 +21,7 @@ from email import encoders
 # Sistem iki farklı hesabı sırayla dener. Biri biterse diğeri devreye girer.
 GROQ_KEYS = [
     os.environ.get("GROQ_API_KEY"),   # Birinci hesap (100k Token)
-    os.environ.get("GROQ_API_KEY_2")  # Yeni oluşturduğunuz ikinci hesap (100k Token)
+    os.environ.get("GROQ_API_KEY_2")  # İkinci hesap (100k Token)
 ]
 
 GMAIL_USER = os.environ.get("GMAIL_USER")
@@ -82,7 +82,7 @@ RSS_SOURCES = {
 }
 
 # ==========================================
-# 3. VERİ TOPLAMA VE FİLTRELEME (48 SAAT KONTROLÜ)
+# 3. VERİ TOPLAMA VE FİLTRELEME (12 SAAT KONTROLÜ)
 # ==========================================
 
 def get_full_text(url):
@@ -93,15 +93,15 @@ def get_full_text(url):
     except: return None
 
 def fetch_news():
-    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR (48 SAATLİK HAFIZA)...")
+    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR (12 SAATLİK AGRESİF HAFIZA)...")
     
     ai_input_data = []
     reference_html_list = []
     
-    # 48 SAATLİK TEKRAR KONTROLÜ (Böylece dünkü haber tekrar gelmez)
+    # 12 SAATLİK TEKRAR KONTROLÜ (Daha sıkı takip için süre kısaltıldı)
     try:
-        past_48h = datetime.datetime.now() - datetime.timedelta(hours=48)
-        response = supabase.table("reports").select("content").gte("created_at", past_48h.isoformat()).execute()
+        past_12h = datetime.datetime.now() - datetime.timedelta(hours=12)
+        response = supabase.table("reports").select("content").gte("created_at", past_12h.isoformat()).execute()
         past_content = str(response.data)
     except: past_content = ""
 
@@ -109,13 +109,13 @@ def fetch_news():
     for cat in RSS_SOURCES.values(): all_urls.extend(cat)
     
     counter = 1
-    # Her kaynaktan en taze 1 haberi al
+    # Her kaynaktan en taze 3 haberi al (Daha fazla veri)
     for url in all_urls:
         try:
             feed = feedparser.parse(url)
             if not feed.entries: continue
 
-            for entry in feed.entries[:1]: 
+            for entry in feed.entries[:3]: 
                 # Link veritabanında var mı diye kontrol et
                 if entry.link not in past_content:
                     full = get_full_text(entry.link)
@@ -305,8 +305,10 @@ if __name__ == "__main__":
             # Raporun veritabanına kaydı
             supabase.table("reports").insert({"content": report_html}).execute()
             
-            # Yerel Arşivleme
-            file_name = f"ARSIV/Rapor_{datetime.datetime.now().strftime('%Y-%m-%d')}.md"
+            # --- KRİTİK GÜNCELLEME: STANDART DOSYA İSMİ FORMATI ---
+            # Dosya ismi artık her zaman: RAPOR_YYYY-MM-DD_HH-mm.md formatında olacak.
+            file_name = f"ARSIV/RAPOR_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')}.md"
+            
             if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
             with open(file_name, "w", encoding="utf-8") as f:
                 f.write(report_html + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html_list + "</ul>")
@@ -314,8 +316,8 @@ if __name__ == "__main__":
             # Git işlemleri
             subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"], capture_output=True)
             subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"], capture_output=True)
-            subprocess.run(["git", "add", file_name], capture_output=True)
-            subprocess.run(["git", "commit", "-m", "Rapor"], capture_output=True)
+            subprocess.run(["git", "add", "ARSIV/*.md"], capture_output=True) # Tüm arşiv klasörünü ekle
+            subprocess.run(["git", "commit", "-m", f"Otomatik Rapor: {datetime.datetime.now().strftime('%d.%m.%Y')}"], capture_output=True)
             subprocess.run(["git", "push"], capture_output=True)
         except Exception as e:
             print(f"⚠️ Arşivleme/Git Hatası: {e}")
