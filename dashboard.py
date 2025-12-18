@@ -261,7 +261,7 @@ if not st.session_state.user and not st.session_state.is_guest:
         if st.button("Devam Et >>"): st.session_state.is_guest = True; st.rerun()
     st.stop()
 
-# --- SIDEBAR: ULTRA HIYERARŞİK ARŞİV ---
+# --- SIDEBAR: ULTRA ESNEK ARŞİV SİSTEMİ ---
 user_id = st.session_state.user.id if st.session_state.user else "guest"
 user_pass = st.session_state.password_cache
 
@@ -269,71 +269,77 @@ with st.sidebar:
     st.header("🗄️ STRATEJİK ARŞİV")
     search_q = st.text_input("🔍 Hızlı Ara", "", placeholder="Tarih veya konu...")
     
+    # Tüm dosyaları oku ve tarihe (oluşturulma zamanına) göre sırala
     dosyalar = sorted(glob.glob("ARSIV/*.md"), key=os.path.getmtime, reverse=True)
     rep = "Veri Yok"
     secilen_icerik = "Seçili rapor yok."
 
-    if not search_q:
+    # --- GELİŞMİŞ TARİH AYIKLAMA (ÖN EK FARK ETMEKSİZİN) ---
+    all_data = []
+    for f in dosyalar:
+        # Dosya adındaki her türlü YYYY-MM-DD formatını yakala
+        match = re.search(r"(\d{4})-(\d{2})-(\d{2})", os.path.basename(f))
+        if match:
+            all_data.append({
+                "y": match.group(1),
+                "m": match.group(2),
+                "d": match.group(3),
+                "path": f,
+                "name": os.path.basename(f)
+            })
+
+    if not search_q and all_data:
         # 1. YIL SEÇİMİ
-        # Dosya ismi ne olursa olsun (Analiz_, Rapor_, WarRoom_) içindeki tarihi regex ile çek
-        years = sorted(list(set([re.search(r"\d{4}", os.path.basename(f)).group() for f in dosyalar if re.search(r"\d{4}", os.path.basename(f))])), reverse=True)
-        if years:
-            s_year = st.selectbox("📅 Yıl", years)
+        years = sorted(list(set([d["y"] for d in all_data])), reverse=True)
+        s_y = st.selectbox("📅 Yıl", years)
+        
+        # 2. AY SEÇİMİ (İSİMLİ)
+        months = sorted(list(set([d["m"] for d in all_data if d["y"]==s_y])), reverse=True)
+        m_names = [AYLAR.get(m, m) for m in months]
+        s_m_name = st.selectbox("🗓️ Ay", m_names)
+        s_m_val = [k for k,v in AYLAR.items() if v==s_m_name][0]
+        
+        # 3. GÜN SEÇİMİ (İSİMLİ)
+        days = sorted(list(set([d["d"] for d in all_data if d["y"]==s_y and d["m"]==s_m_val])), reverse=True)
+        
+        def gun_formatla(d_str):
+            try:
+                dt = datetime.strptime(f"{s_y}-{s_m_val}-{d_str}", "%Y-%m-%d")
+                return f"{d_str} {GUNLER[dt.weekday()]}"
+            except: return d_str
             
-            # 2. AY SEÇİMİ (İSİMLİ)
-            # Seçilen yıla ait dosyalardan ayları çek
-            year_files = [f for f in dosyalar if s_year in os.path.basename(f)]
-            months_raw = sorted(list(set([re.search(r"-(\d{2})-", os.path.basename(f)).group(1) for f in year_files if re.search(r"-(\d{2})-", os.path.basename(f))])), reverse=True)
-            
-            month_options = {AYLAR.get(m, m): m for m in months_raw}
-            if month_options:
-                s_month_name = st.selectbox("🗓️ Ay", list(month_options.keys()))
-                s_month_val = month_options[s_month_name]
-                
-                # 3. GÜN SEÇİMİ (İSİMLİ ve TARİHLİ)
-                # Seçilen Yıl ve Aya ait dosyaları filtrele
-                month_files = [f for f in year_files if f"-{s_month_val}-" in os.path.basename(f)]
-                days_raw = sorted(list(set([re.search(r"-(\d{2})_", os.path.basename(f)).group(1) for f in month_files if re.search(r"-(\d{2})_", os.path.basename(f))])), reverse=True)
-                
-                def gun_adi_bul(g, a, y):
-                    try:
-                        dt = datetime.strptime(f"{y}-{a}-{g}", "%Y-%m-%d")
-                        return f"{g} {GUNLER[dt.weekday()]}"
-                    except: return g
+        d_opts = {gun_formatla(d): d for d in days}
+        s_d_name = st.selectbox("📆 Gün", list(d_opts.keys()))
+        s_d_val = d_opts[s_d_name]
+        
+        # 4. RAPOR SEÇİMİ (SAAT VE ÖN EK FARK ETMEKSİZİN)
+        final_files = [d for d in all_data if d["y"]==s_y and d["m"]==s_m_val and d["d"]==s_d_val]
+        
+        def okunakli_ad(fname):
+            m_saat = re.search(r"_(\d{2})-(\d{2})", fname)
+            label = "📄 " + fname.split("_")[0] # Analiz, Rapor veya WarRoom kısmını al
+            if m_saat:
+                saat = int(m_saat.group(1))
+                periyot = "🌅 Sabah" if saat < 13 else "🌙 Akşam"
+                return f"{label} | {periyot} ({m_saat.group(1)}:{m_saat.group(2)})"
+            return label + " | " + fname
 
-                day_options = {gun_adi_bul(d, s_month_val, s_year): d for d in days_raw}
-                if day_options:
-                    s_day_name = st.selectbox("📆 Gün", list(day_options.keys()))
-                    s_day_val = day_options[s_day_name]
-                    
-                    # 4. RAPOR SEÇİMİ (SAAT VE ÖZET)
-                    final_files = [f for f in month_files if f"-{s_day_val}_" in os.path.basename(f)]
-                    
-                    def rapor_formatla(f):
-                        ad = os.path.basename(f)
-                        match = re.search(r"_(\d{2})-(\d{2})", ad)
-                        if match:
-                            saat = int(match.group(1))
-                            periyot = "🌅 Sabah Raporu" if saat < 13 else "🌙 Akşam Raporu"
-                            return f"{periyot} ({match.group(1)}:{match.group(2)})"
-                        return ad
-
-                    file_map = {rapor_formatla(f): f for f in final_files}
-                    s_rapor = st.selectbox("📄 Rapor Saati", list(file_map.keys()))
-                    
-                    if s_rapor:
-                        with open(file_map[s_rapor], "r", encoding="utf-8") as f:
-                            secilen_icerik = f.read()
-                            rep = f"{s_day_name} {s_month_name} {s_year} | {s_rapor}"
-    else:
-        # Arama modu
-        filtreli = [f for f in dosyalar if search_q.lower() in f.lower()]
-        if filtreli:
-            s_file = st.selectbox("Arama Sonuçları", filtreli, format_func=lambda x: os.path.basename(x))
-            if s_file:
-                with open(s_file, "r", encoding="utf-8") as f:
+        f_map = {okunakli_ad(d["name"]): d["path"] for d in final_files}
+        s_r = st.selectbox("📄 Kayıtlar", list(f_map.keys()))
+        
+        if s_r:
+            with open(f_map[s_r], "r", encoding="utf-8") as f:
+                secilen_icerik = f.read()
+                rep = f"{s_d_name} {s_m_name} {s_y} | {s_r}"
+    
+    elif search_q:
+        filt = [f for f in dosyalar if search_q.lower() in f.lower()]
+        if filt:
+            s_f = st.selectbox("Arama Sonuçları", filt, format_func=lambda x: os.path.basename(x))
+            if s_f:
+                with open(s_f, "r", encoding="utf-8") as f:
                     secilen_icerik = f.read()
-                    rep = os.path.basename(s_file)
+                    rep = os.path.basename(s_f)
         else:
             st.warning("Sonuç bulunamadı.")
 
