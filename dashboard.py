@@ -207,6 +207,16 @@ if "model_mode" not in st.session_state: st.session_state.model_mode = "deep"
 # --- GİRİŞ ---
 if not st.session_state.user and not st.session_state.is_guest:
     st.title("🔐 SAVAŞ ODASI: GİRİŞ")
+    
+    if "type" in st.query_params and st.query_params["type"] == "recovery":
+        st.info("🔄 Şifre Sıfırlama")
+        new_pass_reset = st.text_input("Yeni Şifre", type="password")
+        if st.button("Güncelle"):
+            try:
+                supabase.auth.update_user({"password": new_pass_reset})
+                st.success("Güncellendi!")
+            except Exception as e: st.error(f"Hata: {e}")
+
     col1, col2 = st.columns(2)
     with col1:
         e = st.text_input("E-posta", key="le")
@@ -218,6 +228,14 @@ if not st.session_state.user and not st.session_state.is_guest:
                 d = buluttan_yukle(u.id, p)
                 if d: st.session_state.chat_sessions = d; st.session_state.current_session_name = list(d.keys())[0]
                 st.rerun()
+        
+        # --- KAYIT VE ŞİFRE İŞLEMLERİ (YENİDEN EKLENDİ) ---
+        with st.expander("👤 Kayıt Ol / Şifremi Unuttum"):
+            ne = st.text_input("Yeni E-posta")
+            np = st.text_input("Yeni Şifre", type="password")
+            if st.button("Kayıt Ol"): kayit_ol(ne, np)
+            if st.button("Şifremi Unuttum"): sifre_sifirla(ne)
+
     with col2:
         if st.button("Misafir Devam Et >>"): st.session_state.is_guest = True; st.rerun()
     st.stop()
@@ -310,6 +328,15 @@ with st.sidebar:
         n = f"Op_{datetime.now().strftime('%H%M%S')}"
         st.session_state.chat_sessions[n] = []; st.session_state.current_session_name = n; st.rerun()
     
+    sess_list = list(st.session_state.chat_sessions.keys())
+    sel_sess = st.selectbox("Geçmiş", sess_list, index=sess_list.index(st.session_state.current_session_name))
+    if sel_sess != st.session_state.current_session_name: st.session_state.current_session_name = sel_sess; st.rerun()
+    
+    if st.button("🗑️ İmha Et"):
+        if len(st.session_state.chat_sessions) > 1: del st.session_state.chat_sessions[st.session_state.current_session_name]; st.session_state.current_session_name = list(st.session_state.chat_sessions.keys())[0]
+        else: st.session_state.chat_sessions[st.session_state.current_session_name] = []
+        st.rerun()
+    
     if st.button("🚪 Çıkış"): st.session_state.clear(); st.rerun()
 
 # --- ANA EKRAN ---
@@ -334,12 +361,11 @@ with col_sag:
         if st.button("🔬 DERİN STRATEJİ\n(Detaylı & Çok Mühimmat)", use_container_width=True):
             st.session_state.model_mode = "deep"; st.toast("Derin Strateji Aktif.")
     
-    # --- HATAYI ÖNLEYEN VE SEÇİMİ SABİTLEYEN KRİTİK BÖLGE ---
+    # --- MODEL DEĞİŞKENİNİ GÜVENLİ OLUŞTURMA ---
     if st.session_state.model_mode == "fast":
         selected_model_id = "llama-3.1-8b-instant"
         current_mode_label = "⚡ SERİ MÜDAHALE"
     else:
-        # Varsayılan mod
         selected_model_id = "llama-3.3-70b-versatile"
         current_mode_label = "🔬 DERİN STRATEJİ"
     
