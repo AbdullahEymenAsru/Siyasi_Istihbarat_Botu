@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Depoyu Cek
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Tüm geçmişi çek (push hatalarını önler)
 
       - name: Python Kurulumu
         uses: actions/setup-python@v4
@@ -36,6 +38,9 @@ jobs:
           ALICI_MAIL: ${{ secrets.ALICI_MAIL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # --- KRİTİK EKLEME: GİT İŞLEMLERİ İÇİN ---
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           source .venv/bin/activate
           python main.py
