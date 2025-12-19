@@ -64,24 +64,18 @@ RSS_SOURCES = {
         "https://www.cfr.org/rss/newsletters/daily-brief",
         "https://www.setav.org/feed/"
     ],
-    "BATI": [
+    "DUNYA_SAHASI": [
         "http://feeds.bbci.co.uk/news/world/rss.xml",
-        "http://rss.cnn.com/rss/edition_world.rss",
-        "https://www.reutersagency.com/feed/?best-topics=political-general&post_type=best",
-        "https://www.voanews.com/api/z$omeovuro",
-        "https://www.france24.com/en/rss"
+        "https://www.aljazeera.com/xml/rss/all.xml",
+        "https://tass.com/rss/v2.xml",
+        "https://www.france24.com/en/rss",
+        "https://www.scmp.com/rss/91/feed" # Asya/Çin perspektifi için eklendi
     ],
-    "DOGU": [
-        "http://www.xinhuanet.com/english/rss/worldrss.xml", # Çin
-        "http://www.chinadaily.com.cn/rss/world_rss.xml",
-        "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms", # Hindistan
-        "https://www.dawn.com/feeds/home",            # Pakistan
-        "https://tass.com/rss/v2.xml",                # Rusya
-        "https://www.aljazeera.com/xml/rss/all.xml"   # Orta Doğu
-    ],
-    "TELEGRAM": [
-        "https://rsshub.app/telegram/channel/geopolitics_live",
-        "https://rsshub.app/telegram/channel/intelslava"
+    "TEKNOLOJI_VE_ENERJI": [
+        "https://www.defensenews.com/arc/outboundfeeds/rss/",
+        "https://www.oilprice.com/rss/main",
+        "https://techcrunch.com/feed/",
+        "https://thehackernews.com/rss.xml"
     ]
 }
 
@@ -130,7 +124,7 @@ def fetch_news():
                     source = feed.feed.get('title', 'Kaynak')
                     
                     # AI Verisi (Liste olarak tutuyoruz, string birleştirme yapmıyoruz)
-                    ai_input_data.append(f"[{counter}] SOURCE: {source} | TITLE: {title} | CONTENT: {summary}")
+                    ai_input_data.append(f"[ID:{counter}] KAYNAK: {source} | BAŞLIK: {title} | İÇERİK: {summary}")
                     
                     # E-posta Kaynakça Listesi
                     reference_html_list.append(
@@ -143,20 +137,28 @@ def fetch_news():
     return ai_input_data, "".join(reference_html_list)
 
 # ==========================================
-# 4. ANALİZ (CHUNK-BASED & ROTATIONAL MOTOR)
+# 4. ANALİZ (HABER ODAKLI & AKADEMİK ÇEŞİTLİLİK)
 # ==========================================
 
 def run_agent_workflow(ai_input_list):
+    if not ai_input_list:
+        return None # Haber yoksa None döndür
+
     print(f"🧠 ANALİZ BAŞLADI ({len(ai_input_list)} haber parçalanıyor)...")
     
-    # 1. ADIM: Haberleri 5'erli gruplar halinde parçalara böl (Token güvenliği için Chunking)
-    # Bu işlem "Request too large" hatasını kesin olarak engeller.
-    chunks = [ai_input_list[i:i + 5] for i in range(0, len(ai_input_list), 5)]
+    # 1. ADIM: Haberleri 6'şarlı gruplar halinde parçalara böl (Token güvenliği için Chunking)
+    chunks = [ai_input_list[i:i + 6] for i in range(0, len(ai_input_list), 6)]
     partial_analyses = []
 
     system_prompt = """
-    Sen 'Küresel Savaş Odası'nın Baş Stratejistisin.
-    GÖREVİN: İstihbarat verilerini analiz etmek ve kritik noktaları not almaktır.
+    Sen bir 'İstihbarat Analisti'sin. 
+    GÖREVİN: Gelen ham haberleri, "yorum tekelinden" kurtarıp, önce olgusal (factual) olarak aktarmak.
+    
+    KURALLAR:
+    1. Haberi "Kim, Ne, Nerede, Ne Zaman" formatında net anlat.
+    2. Stratejik yorumunu sadece bir cümlelik "Analist Notu" olarak ekle.
+    3. Teknoloji, Enerji ve Küresel Güney (Afrika/Latin Amerika) haberlerine öncelik ver.
+    4. Her haberin başına [ID:X] etiketini koy.
     """
 
     # 2. ADIM: Her parçayı ayrı ayrı analiz et (Map Phase)
@@ -173,7 +175,7 @@ def run_agent_workflow(ai_input_list):
                     model="llama-3.3-70b-versatile",
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Şu verileri analiz et ve kritik noktaları not al:\n{chunk_text}"}
+                        {"role": "user", "content": f"Şu haberleri sadeleştir ve stratejik önemini belirt:\n{chunk_text}"}
                     ],
                     temperature=0.3
                 )
@@ -186,35 +188,31 @@ def run_agent_workflow(ai_input_list):
     # 3. ADIM: Tüm parçaları birleştirip Final Raporu Oluştur (Reduce Phase)
     final_input = "\n\n".join(partial_analyses)
     final_prompt = """
-    Aşağıdaki analiz notlarını kullanarak, ESKİ TARZ KIRMIZI ALARM formatında tek bir HTML rapor oluştur.
+    Aşağıdaki notları birleştirerek 'SAHA İSTİHBARAT AKIŞI' raporu oluştur.
 
     **ZORUNLU HTML FORMATI (BUNU KULLAN):**
     
-    <div style="background-color: #3e0e0e; color: #fff; padding: 20px; border-left: 6px solid #e74c3c; margin-bottom: 25px; border-radius: 4px;">
-        <h2 style="color: #ff6b6b; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 KIRMIZI ALARM (Sıcak Çatışma & Riskler)</h2>
-        <p style="font-size: 16px; line-height: 1.6;">(En acil çatışma haberini buraya yaz.)</p>
+    <div style="background-color: #2c3e50; color: #ecf0f1; padding: 20px; border-left: 6px solid #e74c3c; margin-bottom: 25px; border-radius: 4px;">
+        <h2 style="color: #e74c3c; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 SICAK GELİŞMELER (Flashpoint)</h2>
+        <p style="font-size: 16px; line-height: 1.6;">(En kritik 2-3 olayı, haber diliyle ve [ID:X] kullanarak anlat.)</p>
     </div>
 
-    <div style="margin-bottom: 30px; border-bottom: 2px solid #ccc; padding-bottom: 20px;">
-        <h2 style="color: #2980b9; font-family: 'Georgia', serif;">🌍 KÜRESEL UFUK TURU</h2>
-        <p><b>📍 Asya-Pasifik & Doğu:</b> (Çin, Hindistan, Rusya hamleleri.)</p>
-        <p><b>📍 Avrupa & Batı Bloku:</b> (ABD, AB, Ukrayna gelişmeleri.)</p>
-        <p><b>📍 Orta Doğu Hattı:</b> (İsrail, Filistin, Türkiye ekseni.)</p>
+    <div style="margin-bottom: 30px; border-bottom: 2px solid #bdc3c7; padding-bottom: 20px;">
+        <h2 style="color: #2980b9; font-family: 'Georgia', serif;">🌐 KÜRESEL SAHA GÖZLEMİ</h2>
+        <p><b>📍 Asya & Pasifik:</b> (Çin, Hindistan vb. somut gelişmeler.)</p>
+        <p><b>📍 Avrupa & Batı:</b> (Savunma sanayi ve diplomatik hamleler.)</p>
+        <p><b>📍 Küresel Güney & Orta Doğu:</b> (Afrika, Latin Amerika, Arap coğrafyası.)</p>
     </div>
-
-    <div style="background-color: #f0f3f4; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
-        <h2 style="color: #8e44ad; margin-top: 0; font-family: 'Georgia', serif;">🧠 THINK-TANK KÖŞESİ (Derin Okuma)</h2>
-        <p style="color: #333; line-height: 1.6;">(Akademik ve derin analizler.)</p>
-    </div>
-
-    <div style="border-left: 5px solid #27ae60; padding-left: 15px; margin-bottom: 30px;">
-        <h2 style="color: #27ae60; margin-top: 0; font-family: 'Georgia', serif;">🔮 GELECEK SENARYOLARI & POLİTİKA</h2>
-        <p style="color: #222; line-height: 1.6;">(Önümüzdeki 1 ay için öngörün ve Türkiye'ye tavsiyen.)</p>
+    
+    <div style="background-color: #f4f6f7; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #d5dbdb;">
+        <h2 style="color: #16a085; margin-top: 0; font-family: 'Georgia', serif;">⚡ TEKNOLOJİ, ENERJİ VE SİBER SAVAŞ</h2>
+        <p style="color: #2c3e50; line-height: 1.6;">(Enerji hatları, çip savaşları, siber saldırılar ve savunma sanayi haberleri.)</p>
     </div>
 
     <div style="background-color: #fff8e1; border: 1px solid #ffecb3; padding: 15px; border-radius: 5px;">
-        <h3 style="color: #d35400; margin-top: 0;">🎓 GÜNÜN AKADEMİK KAVRAMI</h3>
-        <p><b>Kavram:</b> (Örn: Security Dilemma)<br><b>Tanım:</b> (Kısa akademik tanım)<br><b>📖 Kitap/Makale Önerisi:</b> (Yazar - Eser Adı)</p>
+        <h3 style="color: #d35400; margin-top: 0;">🎓 GÜNÜN AKADEMİK KAVRAMI (Interesting Concept)</h3>
+        <p><b>ÖNEMLİ:</b> 'Güvenlik İkilemi' gibi basit kavramları KULLANMA. Haberlerin içeriğine uygun, entelektüel ve az bilinen bir stratejik kavram seç (Örn: Gri Bölge, Hukuk Savaşı/Lawfare, Keskin Güç, Thukydides Tuzağı vb.).</p>
+        <p><b>Kavram:</b> ... | <b>Tanım:</b> ... | <b>📖 Önerilen Eser:</b> ...</p>
     </div>
     """
 
@@ -225,7 +223,7 @@ def run_agent_workflow(ai_input_list):
                 model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"{final_prompt}\n\nANALİZ NOTLARI:\n{final_input}"}
+                    {"role": "user", "content": f"{final_prompt}\n\nVERİLER:\n{final_input}"}
                 ],
                 temperature=0.4
             )
@@ -264,18 +262,21 @@ def send_email(report_body, references_html, audio_file):
     
     email_html = f"""
     <html>
-    <body style="font-family: Arial, sans-serif; background-color: #ffffff; padding: 20px; color: #333;">
-        <div style="max-width: 800px; margin: auto;">
-            <div style="text-align: center; border-bottom: 3px solid #000; padding-bottom: 15px; margin-bottom: 30px;">
-                <h1 style="margin: 0; color: #000; font-family: 'Times New Roman', serif; text-transform: uppercase;">KÜRESEL SAVAŞ ODASI</h1>
-                <p style="margin: 5px 0 0 0; color: #555; font-style: italic;">Stratejik İstihbarat Bülteni | {today}</p>
-                <br>
-                <a href="https://siyasi-istihbarat-botu.streamlit.app/" style="background-color: #000; color: #fff; padding: 8px 15px; text-decoration: none; font-size: 12px; font-weight: bold;">CANLI PANEL</a>
+    <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #333; background-color: #f9f9f9;">
+        <div style="max-width: 850px; margin: auto; background: white; border: 1px solid #ddd; padding: 25px; box-shadow: 0 4px 8px rgba(0,0,0,0.05);">
+            <div style="text-align: center; border-bottom: 3px solid #2c3e50; padding-bottom: 15px; margin-bottom: 25px;">
+                <h1 style="color: #2c3e50; margin: 0; font-size: 24px;">KÜRESEL SAVAŞ ODASI</h1>
+                <p style="color: #7f8c8d; font-style: italic; margin-top: 5px;">Saha İstihbarat ve Strateji Bülteni | {today}</p>
             </div>
-            {report_body}
-            <div style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ccc;">
-                <h3 style="color: #333; font-family: 'Georgia', serif;">📚 DOĞRULANMIŞ KAYNAKÇA & REFERANSLAR</h3>
-                <ul style="font-size: 12px; color: #555; padding-left: 20px; line-height: 1.8;">{references_html}</ul>
+            <div style="line-height: 1.7; font-size: 15px;">
+                {report_body}
+            </div>
+            <div style="margin-top: 40px; background: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #3498db;">
+                <h3 style="color: #2c3e50; margin-top: 0; font-size: 16px;">📚 DOĞRULANMIŞ İSTİHBARAT KAYNAKLARI</h3>
+                <ul style="font-size: 12px; color: #34495e; padding-left: 20px;">{references_html}</ul>
+            </div>
+            <div style="text-align: center; margin-top: 20px; font-size: 11px; color: #aaa;">
+                <p>Bu rapor, açık kaynak istihbarat (OSINT) verileri kullanılarak hazırlanmıştır.</p>
             </div>
         </div>
     </body>
@@ -291,7 +292,7 @@ def send_email(report_body, references_html, audio_file):
             msg = MIMEMultipart()
             msg['From'] = GMAIL_USER
             msg['To'] = email
-            msg['Subject'] = f"KIRMIZI ALARM: Stratejik Durum - {today}"
+            msg['Subject'] = f"GÜNLÜK İSTİHBARAT: {today}"
             msg.attach(MIMEText(email_html, 'html'))
 
             if audio_file and os.path.exists(audio_file):
@@ -316,8 +317,11 @@ def send_email(report_body, references_html, audio_file):
 if __name__ == "__main__":
     news_list, ref_html = fetch_news()
     
-    if news_list:
-        report_html = run_agent_workflow(news_list)
+    # HABER YOKSA SESSİZLİK: report_html None gelirse durur
+    report_html = run_agent_workflow(news_list)
+    
+    if report_html:
+        print("✅ Yeni istihbarat işleniyor...")
         audio = create_audio_summary(report_html)
         
         # --- ENTEGRE KAYIT SİSTEMİ (SUPABASE + GITHUB) ---
@@ -328,7 +332,7 @@ if __name__ == "__main__":
             
             # 2. GitHub Arşivleme (GÜVENLİ PUSH SİSTEMİ)
             now = datetime.datetime.now()
-            file_name = f"ARSIV/RAPOR_{now.strftime('%Y-%m-%d_%H-%M')}.md"
+            file_name = f"ARSIV/HABER_{now.strftime('%Y-%m-%d_%H-%M')}.md"
             
             if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
             
@@ -338,10 +342,10 @@ if __name__ == "__main__":
             # Git işlemleri ile depoya geri yükle (TOKEN İLE GÜVENLİ BAĞLANTI)
             if GITHUB_TOKEN and GITHUB_REPOSITORY:
                 repo_url = f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPOSITORY}.git"
-                subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"], capture_output=True)
-                subprocess.run(["git", "config", "--global", "user.email", "bot@warroom.com"], capture_output=True)
+                subprocess.run(["git", "config", "--global", "user.name", "FieldBot"], capture_output=True)
+                subprocess.run(["git", "config", "--global", "user.email", "bot@field.com"], capture_output=True)
                 subprocess.run(["git", "add", "ARSIV/*.md"], capture_output=True)
-                subprocess.run(["git", "commit", "-m", f"Rapor: {now.strftime('%Y-%m-%d %H:%M')}"], capture_output=True)
+                subprocess.run(["git", "commit", "-m", f"Saha Raporu: {now.strftime('%Y-%m-%d %H:%M')}"], capture_output=True)
                 subprocess.run(["git", "push", repo_url, "HEAD:main"], capture_output=True)
                 print(f"✅ Rapor GitHub'a arşivlendi: {file_name}")
             else:
@@ -352,5 +356,6 @@ if __name__ == "__main__":
 
         # E-posta Dağıtımı
         send_email(report_html, ref_html, audio)
+        print("🚀 İstihbarat akışı başarıyla tamamlandı.")
     else:
-        print("⚠️ Yeterli yeni veri bulunamadı.")
+        print("⚠️ Son 24 saat içinde raporlanmamış YENİ bir gelişme tespit edilemedi. Operasyon askıya alındı.")
