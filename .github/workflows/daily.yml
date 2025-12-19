@@ -2,7 +2,7 @@ name: Gunluk Istihbarat Botu
 
 on:
   schedule:
-    - cron: '15 * * *' # Her gün 08:00 ve 18:00 (TSİ) civarı çalışır
+    - cron: '15 * * *' # Her gün belirli saatlerde çalışır
   workflow_dispatch: # Manuel tetikleme butonu
 
 permissions:
@@ -23,7 +23,6 @@ jobs:
 
       # --- ULTRA HIZLI KURULUM (GEREKSİZ AĞIRLIK YOK) ---
       # requirements.txt yerine sadece main.py için gerekenleri kuruyoruz.
-      # PyTorch, Transformers gibi devasa kütüphaneleri İNDİRMİYORUZ.
       - name: Install dependencies with uv
         run: |
           pip install uv
