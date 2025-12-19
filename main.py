@@ -93,7 +93,7 @@ def get_full_text(url):
     if "t.me" in url or ".pdf" in url: return None
     try:
         downloaded = trafilatura.fetch_url(url)
-        return trafilatura.extract(downloaded)[:2000] if downloaded else None
+        return trafilatura.extract(downloaded)[:1500] if downloaded else None
     except: return None
 
 def fetch_news():
@@ -119,50 +119,78 @@ def fetch_news():
             feed = feedparser.parse(url)
             if not feed.entries: continue
 
-            for entry in feed.entries[:3]: 
+            # KOMUTANIN EMRİ: SADECE EN TAZE 2 HABER (YÜK DENGESİ İÇİN)
+            for entry in feed.entries[:2]: 
                 # Link veritabanında var mı diye kontrol et
                 if entry.link not in past_content:
                     full = get_full_text(entry.link)
-                    summary = full if full else entry.get('summary', '')[:600]
+                    summary = full if full else entry.get('summary', '')[:500]
                     title = entry.title
                     source = feed.feed.get('title', 'Kaynak')
                     
                     # AI Verisi
                     ai_input_data.append(f"[{counter}] SOURCE: {source} | TITLE: {title} | CONTENT: {summary}")
                     
-                    # E-posta Kaynakça Listesi - DÜZELTİLDİ: Artık String Değil Liste Olarak Dönüyor
+                    # E-posta Kaynakça Listesi
                     reference_html_list.append(
                         f"<li style='margin-bottom:6px;'><b>[{counter}]</b> <a href='{entry.link}' style='color:#0000EE; text-decoration:none;'>{source} - {title}</a></li>"
                     )
                     counter += 1
         except: continue
 
-    # DÜZELTME: Referans listesini string olarak birleştirip döndür
-    return "\n\n".join(ai_input_data), "".join(reference_html_list)
+    # Veriyi ve HTML referanslarını ayrı ayrı döndür
+    return ai_input_data, "".join(reference_html_list)
 
 # ==========================================
-# 4. ANALİZ (ROTASYONEL DOKTRİNER MOTOR)
+# 4. ANALİZ (CHUNK-BASED & ROTATIONAL MOTOR)
 # ==========================================
 
-def run_agent_workflow(current_data):
-    print("🧠 STRATEJİK ANALİZ VE TASARIM OLUŞTURULUYOR (ROTASYON AKTİF)...")
+def run_agent_workflow(ai_input_list):
+    print(f"🧠 ANALİZ BAŞLADI ({len(ai_input_list)} haber parçalanıyor)...")
     
-    system_prompt = f"""
-    Sen 'Küresel Savaş Odası'nın Baş Stratejistisin.
-    GÖREVİN: İstihbarat verilerini analiz etmek ve **DOKTRİNER DİLLE**, aşağıdaki **ESKİ VE NET FORMATTA** raporlamak.
+    # 1. ADIM: Haberleri 5'erli gruplar halinde parçalara böl (Token güvenliği)
+    chunks = [ai_input_list[i:i + 5] for i in range(0, len(ai_input_list), 5)]
+    partial_analyses = []
 
-    **GENEL KURALLAR:**
-    1. **GELECEK ODAKLI:** "Rusya saldırdı" deme. "Bu saldırı tahıl krizini tetikleyerek Afrika'da istikrarsızlık yaratacak" de.
-    2. **ATIF:** Bilgi verdiğin her yerde `` kullan.
-    3. **DİL:** Ciddi, akademik ve sürükleyici.
+    system_prompt = """
+    Sen 'Küresel Savaş Odası'nın Baş Stratejistisin.
+    GÖREVİN: İstihbarat verilerini analiz etmek ve kritik noktaları not almaktır.
+    """
+
+    # 2. ADIM: Her parçayı ayrı ayrı analiz et (Map Phase)
+    for chunk in chunks:
+        chunk_text = "\n\n".join(chunk)
+        success = False
+        
+        # Rotasyon denemesi
+        for i, key in enumerate(GROQ_KEYS):
+            if not key or success: continue
+            try:
+                temp_client = Groq(api_key=key)
+                completion = temp_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Şu verileri analiz et ve kritik noktaları not al:\n{chunk_text}"}
+                    ],
+                    temperature=0.3
+                )
+                partial_analyses.append(completion.choices[0].message.content)
+                success = True
+            except Exception as e:
+                print(f"⚠️ {i+1}. Anahtar hatası, rotasyon deneniyor... {e}")
+                continue
+    
+    # 3. ADIM: Tüm parçaları birleştirip Final Raporu Oluştur (Reduce Phase)
+    final_input = "\n\n".join(partial_analyses)
+    final_prompt = """
+    Aşağıdaki analiz notlarını kullanarak, ESKİ TARZ KIRMIZI ALARM formatında tek bir HTML rapor oluştur.
 
     **ZORUNLU HTML FORMATI (BUNU KULLAN):**
     
     <div style="background-color: #3e0e0e; color: #fff; padding: 20px; border-left: 6px solid #e74c3c; margin-bottom: 25px; border-radius: 4px;">
         <h2 style="color: #ff6b6b; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 KIRMIZI ALARM (Sıcak Çatışma & Riskler)</h2>
-        <p style="font-size: 16px; line-height: 1.6;">
-            (En acil çatışma haberini ve gelecek risklerini buraya yaz.)
-        </p>
+        <p style="font-size: 16px; line-height: 1.6;">(En acil çatışma haberini buraya yaz.)</p>
     </div>
 
     <div style="margin-bottom: 30px; border-bottom: 2px solid #ccc; padding-bottom: 20px;">
@@ -174,95 +202,79 @@ def run_agent_workflow(current_data):
 
     <div style="background-color: #f0f3f4; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
         <h2 style="color: #8e44ad; margin-top: 0; font-family: 'Georgia', serif;">🧠 THINK-TANK KÖŞESİ (Derin Okuma)</h2>
-        <p style="color: #333; line-height: 1.6;">
-            (Akademik ve derin analizler.)
-        </p>
+        <p style="color: #333; line-height: 1.6;">(Akademik ve derin analizler.)</p>
     </div>
 
     <div style="border-left: 5px solid #27ae60; padding-left: 15px; margin-bottom: 30px;">
         <h2 style="color: #27ae60; margin-top: 0; font-family: 'Georgia', serif;">🔮 GELECEK SENARYOLARI & POLİTİKA</h2>
-        <p style="color: #222; line-height: 1.6;">
-            (Önümüzdeki 1 ay için öngörün ve Türkiye'ye tavsiyen.)
-        </p>
+        <p style="color: #222; line-height: 1.6;">(Önümüzdeki 1 ay için öngörün ve Türkiye'ye tavsiyen.)</p>
     </div>
 
     <div style="background-color: #fff8e1; border: 1px solid #ffecb3; padding: 15px; border-radius: 5px;">
         <h3 style="color: #d35400; margin-top: 0;">🎓 GÜNÜN AKADEMİK KAVRAMI</h3>
-        <p><b>Kavram:</b> (Örn: Security Dilemma)<br>
-        <b>Tanım:</b> (Kısa akademik tanım)<br>
-        <b>📖 Kitap/Makale Önerisi:</b> (Yazar - Eser Adı)</p>
+        <p><b>Kavram:</b> (Örn: Security Dilemma)<br><b>Tanım:</b> (Kısa akademik tanım)<br><b>📖 Kitap/Makale Önerisi:</b> (Yazar - Eser Adı)</p>
     </div>
     """
 
-    # --- ROTASYON MANTIĞI: 1. KEY BİTERSE 2. KEY'E GEÇER ---
     for i, key in enumerate(GROQ_KEYS):
-        if not key: continue
         try:
             temp_client = Groq(api_key=key)
-            completion = temp_client.chat.completions.create(
+            final_report = temp_client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"İSTİHBARAT VERİLERİ:\n{current_data}"}
+                    {"role": "user", "content": f"{final_prompt}\n\nANALİZ NOTLARI:\n{final_input}"}
                 ],
                 temperature=0.4
             )
-            return completion.choices[0].message.content
+            return final_report.choices[0].message.content
         except Exception as e:
-            if "429" in str(e): # Kota aşımı hatası tespit edilirse
-                print(f"⚠️ {i+1}. API Hattı Dolu, Yedek Hatta Geçiliyor...")
-                continue
-            return f"<p>AI Analiz Hatası: {e}</p>"
+            if "429" in str(e): continue
+            return f"<p>Final Rapor Hatası: {e}</p>"
     
-    return "<p>❌ Tüm API kotaları tükendi. Operasyon durduruldu.</p>"
+    return "<p>❌ Kritik Hata: Rapor oluşturulamadı (Tüm API'ler dolu).</p>"
 
 # ==========================================
 # 5. SES & ARŞİV & DAĞITIM
 # ==========================================
 
 async def generate_voice(text, output_file):
-    communicate = edge_tts.Communicate(text, SES_MODELI)
+    # HTML taglerini temizle
+    clean = re.sub('<[^<]+?>', '', text)[:1500]
+    communicate = edge_tts.Communicate(clean, SES_MODELI)
     await asyncio.wait_for(communicate.save(output_file), timeout=60)
 
 def create_audio_summary(report_html):
     print("🎙️ Sesli özet hazırlanıyor...")
-    clean = re.sub('<[^<]+?>', '', report_html)[:1500]
     filename = "Gunluk_Ozet.mp3"
     try:
-        asyncio.run(generate_voice(clean, filename))
+        asyncio.run(generate_voice(report_html, filename))
         return filename
     except: return None
 
 def send_email(report_body, references_html, audio_file):
     if not ALICI_LISTESI: 
-        print("⚠️ Aktif alıcı bulunamadı (Tüm kullanıcılar FALSE veya NULL olabilir).")
+        print("⚠️ Aktif alıcı bulunamadı.")
         return
     
     print(f"📧 {len(ALICI_LISTESI)} aktif aboneye gönderiliyor...")
     today = datetime.datetime.now().strftime("%d.%m.%Y")
     
-    # TASARIM: Sizin İstediğiniz "Eski Tarz" (Görsel Odaklı)
     email_html = f"""
     <html>
     <body style="font-family: Arial, sans-serif; background-color: #ffffff; padding: 20px; color: #333;">
         <div style="max-width: 800px; margin: auto;">
-            
             <div style="text-align: center; border-bottom: 3px solid #000; padding-bottom: 15px; margin-bottom: 30px;">
                 <h1 style="margin: 0; color: #000; font-family: 'Times New Roman', serif; text-transform: uppercase;">KÜRESEL SAVAŞ ODASI</h1>
                 <p style="margin: 5px 0 0 0; color: #555; font-style: italic;">Stratejik İstihbarat Bülteni | {today}</p>
                 <br>
                 <a href="https://siyasi-istihbarat-botu.streamlit.app/" style="background-color: #000; color: #fff; padding: 8px 15px; text-decoration: none; font-size: 12px; font-weight: bold;">CANLI PANEL</a>
             </div>
-
             {report_body}
-
             <div style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ccc;">
                 <h3 style="color: #333; font-family: 'Georgia', serif;">📚 DOĞRULANMIŞ KAYNAKÇA & REFERANSLAR</h3>
-                <ul style="font-size: 12px; color: #555; padding-left: 20px; line-height: 1.8;">
-                    {references_html}
-                </ul>
+                <ul style="font-size: 12px; color: #555; padding-left: 20px; line-height: 1.8;">{references_html}</ul>
             </div>
-
         </div>
     </body>
     </html>
@@ -291,7 +303,7 @@ def send_email(report_body, references_html, audio_file):
             server.sendmail(GMAIL_USER, email, msg.as_string())
         
         server.quit()
-        print("✅ Operasyon Tamamlandı.")
+        print("✅ E-posta Operasyonu Tamamlandı.")
     except Exception as e:
         print(f"❌ Mail Hatası: {e}")
 
@@ -300,10 +312,10 @@ def send_email(report_body, references_html, audio_file):
 # ==========================================
 
 if __name__ == "__main__":
-    news_data, ref_html_list = fetch_news()
+    news_list, ref_html = fetch_news()
     
-    if news_data:
-        report_html = run_agent_workflow(news_data)
+    if news_list:
+        report_html = run_agent_workflow(news_list)
         audio = create_audio_summary(report_html)
         
         # --- ENTEGRE KAYIT SİSTEMİ (SUPABASE + GITHUB) ---
@@ -313,16 +325,13 @@ if __name__ == "__main__":
             print("✅ Rapor Supabase'e işlendi.")
             
             # 2. GitHub Arşivleme (GÜVENLİ PUSH SİSTEMİ)
-            # Dosya ismi artık her zaman: RAPOR_YYYY-MM-DD_HH-mm.md formatında olacak.
             now = datetime.datetime.now()
             file_name = f"ARSIV/RAPOR_{now.strftime('%Y-%m-%d_%H-%M')}.md"
             
-            # Klasör kontrolü
             if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
             
-            # Dosyayı yaz
             with open(file_name, "w", encoding="utf-8") as f:
-                f.write(report_html + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html_list + "</ul>")
+                f.write(report_html + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html + "</ul>")
             
             # Git işlemleri ile depoya geri yükle (TOKEN İLE GÜVENLİ BAĞLANTI)
             if GITHUB_TOKEN and GITHUB_REPOSITORY:
@@ -340,6 +349,6 @@ if __name__ == "__main__":
             print(f"⚠️ Arşivleme/Git Hatası: {e}")
 
         # E-posta Dağıtımı
-        send_email(report_html, ref_html_list, audio)
+        send_email(report_html, ref_html, audio)
     else:
         print("⚠️ Yeterli yeni veri bulunamadı.")
