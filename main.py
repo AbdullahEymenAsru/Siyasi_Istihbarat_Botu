@@ -87,12 +87,12 @@ def get_full_text(url):
     if "t.me" in url or ".pdf" in url: return None
     try:
         downloaded = trafilatura.fetch_url(url)
-        # Token tasarrufu için karakter limiti 1500'e çekildi
-        return trafilatura.extract(downloaded)[:1500] if downloaded else None
+        # Token tasarrufu için karakter limiti 1200'e çekildi
+        return trafilatura.extract(downloaded)[:1200] if downloaded else None
     except: return None
 
 def fetch_news():
-    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR (12 SAATLİK AGRESİF HAFIZA)...")
+    print("🕵️‍♂️ KÜRESEL İSTİHBARAT AĞI TARANIYOR (ZAMAN VE İÇERİK FİLTRESİ AKTİF)...")
     
     ai_input_data = []
     reference_html_list = []
@@ -114,51 +114,62 @@ def fetch_news():
             feed = feedparser.parse(url)
             if not feed.entries: continue
 
-            # KOMUTANIN EMRİ: SADECE EN TAZE 2 HABER (Token yükünü azaltmak için 3 yerine 2)
+            # KOMUTANIN EMRİ: SADECE EN TAZE 2 HABER
             for entry in feed.entries[:2]: 
-                # Link veritabanında var mı diye kontrol et
-                if entry.link not in past_content:
-                    full = get_full_text(entry.link)
-                    summary = full if full else entry.get('summary', '')[:500]
-                    title = entry.title
-                    source = feed.feed.get('title', 'Kaynak')
-                    
-                    # AI Verisi (Liste olarak tutuyoruz, string birleştirme yapmıyoruz)
-                    ai_input_data.append(f"[ID:{counter}] KAYNAK: {source} | BAŞLIK: {title} | İÇERİK: {summary}")
-                    
-                    # E-posta Kaynakça Listesi
-                    reference_html_list.append(
-                        f"<li style='margin-bottom:6px;'><b>[{counter}]</b> <a href='{entry.link}' style='color:#0000EE; text-decoration:none;'>{source} - {title}</a></li>"
-                    )
-                    counter += 1
+                # 1. TARİH KONTROLÜ (BAYAT HABER ENGELLEYİCİ)
+                # Eğer haberin yayın tarihi varsa ve 48 saatten eskiyse ALMA.
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    dt_pub = datetime.datetime(*entry.published_parsed[:6])
+                    if (datetime.datetime.now() - dt_pub).days > 2:
+                        continue # Haber çok eski, atla.
+
+                # 2. İÇERİK TEKRAR KONTROLÜ
+                if entry.link in past_content or entry.title[:30] in past_content:
+                    continue
+
+                full = get_full_text(entry.link)
+                summary = full if full else entry.get('summary', '')[:400]
+                title = entry.title
+                source = feed.feed.get('title', 'Kaynak')
+                
+                # AI Verisi
+                ai_input_data.append(f"[ID:{counter}] KAYNAK: {source} | BAŞLIK: {title} | İÇERİK: {summary}")
+                
+                # E-posta Kaynakça Listesi
+                reference_html_list.append(
+                    f"<li style='margin-bottom:6px;'><b>[{counter}]</b> <a href='{entry.link}' style='color:#0000EE; text-decoration:none;'>{source} - {title}</a></li>"
+                )
+                counter += 1
         except: continue
 
     # Veriyi liste olarak döndür, referansları string olarak döndür
     return ai_input_data, "".join(reference_html_list)
 
 # ==========================================
-# 4. ANALİZ (HABER ODAKLI & AKADEMİK ÇEŞİTLİLİK)
+# 4. ANALİZ (CHUNK-BASED & ROTATIONAL MOTOR)
 # ==========================================
 
 def run_agent_workflow(ai_input_list):
     if not ai_input_list:
-        return None # Haber yoksa None döndür
+        return None # Haber yoksa işlem yapma
 
-    print(f"🧠 ANALİZ BAŞLADI ({len(ai_input_list)} haber parçalanıyor)...")
+    print(f"🧠 ANALİZ BAŞLADI ({len(ai_input_list)} haber DİL FİLTRESİNDEN GEÇİRİLİYOR)...")
     
     # 1. ADIM: Haberleri 6'şarlı gruplar halinde parçalara böl (Token güvenliği için Chunking)
     chunks = [ai_input_list[i:i + 6] for i in range(0, len(ai_input_list), 6)]
     partial_analyses = []
 
+    # DEMİR YUMRUK PROMPT (DİL VE İÇERİK KONTROLÜ İÇİN GÜNCELLENDİ)
     system_prompt = """
-    Sen bir 'İstihbarat Analisti'sin. 
-    GÖREVİN: Gelen ham haberleri, "yorum tekelinden" kurtarıp, önce olgusal (factual) olarak aktarmak.
-    
+    Sen bir Askeri İstihbarat Analistisin.
+    GÖREVİN: Ham verileri alıp, varsa YABANCI DİLLERİ (Endonezce, İngilizce vb.) temizleyerek profesyonel TÜRKÇE rapor oluşturmak.
+
     KURALLAR:
-    1. Haberi "Kim, Ne, Nerede, Ne Zaman" formatında net anlat.
-    2. Stratejik yorumunu sadece bir cümlelik "Analist Notu" olarak ekle.
-    3. Teknoloji, Enerji ve Küresel Güney (Afrika/Latin Amerika) haberlerine öncelik ver.
-    4. Her haberin başına [ID:X] etiketini koy.
+    1. DİL ZORUNLULUĞU: Tüm metinler Türkçe olacak. Asla Endonezce veya İngilizce cümle bırakma.
+    2. TERMİNOLOJİ: Kritik kavramların İngilizcesini parantez içinde ver. Örn: "Güç Projeksiyonu (Power Projection)".
+    3. YORUM YOK, OLGU VAR: Analist notunu 15 kelimeyle sınırla. Olayın kendisine (Kim, Ne, Nerede) odaklan.
+    4. KAVRAM SEÇİMİ: 'Güvenlik İkilemi' veya 'Thukydides Tuzağı' gibi klişeleri YASAKLA. Daha sofistike kavramlar (Örn: Gri Bölge, Hukuk Savaşı) kullan.
+    5. Her haberin başına [ID:X] etiketini koru.
     """
 
     # 2. ADIM: Her parçayı ayrı ayrı analiz et (Map Phase)
@@ -175,9 +186,9 @@ def run_agent_workflow(ai_input_list):
                     model="llama-3.3-70b-versatile",
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"Şu haberleri sadeleştir ve stratejik önemini belirt:\n{chunk_text}"}
+                        {"role": "user", "content": f"Şu verileri TEMİZLE, ÇEVİR ve ÖZETLE:\n{chunk_text}"}
                     ],
-                    temperature=0.3
+                    temperature=0.2 # Düşük sıcaklık = Daha az halüsinasyon, daha net çeviri
                 )
                 partial_analyses.append(completion.choices[0].message.content)
                 success = True
@@ -188,13 +199,13 @@ def run_agent_workflow(ai_input_list):
     # 3. ADIM: Tüm parçaları birleştirip Final Raporu Oluştur (Reduce Phase)
     final_input = "\n\n".join(partial_analyses)
     final_prompt = """
-    Aşağıdaki notları birleştirerek 'SAHA İSTİHBARAT AKIŞI' raporu oluştur.
+    Aşağıdaki analiz notlarını birleştirerek profesyonel bir BILINGUAL (ÇİFT DİLLİ TERMİNOLOJİLİ) SAHA RAPORU oluştur.
 
-    **ZORUNLU HTML FORMATI (BUNU KULLAN):**
+    **ZORUNLU HTML FORMATI:**
     
     <div style="background-color: #2c3e50; color: #ecf0f1; padding: 20px; border-left: 6px solid #e74c3c; margin-bottom: 25px; border-radius: 4px;">
         <h2 style="color: #e74c3c; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 SICAK GELİŞMELER (Flashpoint)</h2>
-        <p style="font-size: 16px; line-height: 1.6;">(En kritik 2-3 olayı, haber diliyle ve [ID:X] kullanarak anlat.)</p>
+        <p style="font-size: 16px; line-height: 1.6;">(En kritik 2-3 olayı, haber diliyle ve [ID:X] kullanarak anlat. Tarihlerin GÜNCEL olduğundan emin ol.)</p>
     </div>
 
     <div style="margin-bottom: 30px; border-bottom: 2px solid #bdc3c7; padding-bottom: 20px;">
@@ -211,7 +222,7 @@ def run_agent_workflow(ai_input_list):
 
     <div style="background-color: #fff8e1; border: 1px solid #ffecb3; padding: 15px; border-radius: 5px;">
         <h3 style="color: #d35400; margin-top: 0;">🎓 GÜNÜN AKADEMİK KAVRAMI (Interesting Concept)</h3>
-        <p><b>ÖNEMLİ:</b> 'Güvenlik İkilemi' gibi basit kavramları KULLANMA. Haberlerin içeriğine uygun, entelektüel ve az bilinen bir stratejik kavram seç (Örn: Gri Bölge, Hukuk Savaşı/Lawfare, Keskin Güç, Thukydides Tuzağı vb.).</p>
+        <p><b>ÖNEMLİ:</b> Basit kavram kullanma. Habere uygun, entelektüel bir kavram seç.</p>
         <p><b>Kavram:</b> ... | <b>Tanım:</b> ... | <b>📖 Önerilen Eser:</b> ...</p>
     </div>
     """
@@ -332,7 +343,7 @@ if __name__ == "__main__":
             
             # 2. GitHub Arşivleme (GÜVENLİ PUSH SİSTEMİ)
             now = datetime.datetime.now()
-            file_name = f"ARSIV/HABER_{now.strftime('%Y-%m-%d_%H-%M')}.md"
+            file_name = f"ARSIV/RAPOR_{now.strftime('%Y-%m-%d_%H-%M')}.md"
             
             if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
             
