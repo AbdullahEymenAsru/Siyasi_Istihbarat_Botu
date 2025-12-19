@@ -2,8 +2,8 @@ name: Gunluk Istihbarat Botu
 
 on:
   schedule:
-    - cron: '15 * * *' # Her gün belirli saatlerde çalışır
-  workflow_dispatch: # Manuel tetikleme butonu
+    - cron: '15 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,9 +11,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Depoyu Çek
+      - name: Depoyu Cek
         uses: actions/checkout@v3
 
       - name: Python Kurulumu
@@ -21,22 +20,17 @@ jobs:
         with:
           python-version: '3.10'
 
-      # --- ULTRA HIZLI KURULUM (GEREKSİZ AĞIRLIK YOK) ---
-      # requirements.txt yerine sadece main.py için gerekenleri kuruyoruz.
-      - name: Install dependencies with uv
+      - name: Kutuphaneleri Kur
         run: |
           pip install uv
           uv venv
           source .venv/bin/activate
-          # Sadece botun çalışması için şart olan hafif paketler:
           uv pip install feedparser requests trafilatura groq supabase edge-tts networkx matplotlib
 
-      - name: Ajanı Çalıştır
+      - name: Ajani Calistir
         env:
-          # --- KRİTİK GÜNCELLEME: ÇİFT MÜHİMMAT HATTI ---
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
-          # -----------------------------------------------
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           ALICI_MAIL: ${{ secrets.ALICI_MAIL }}
