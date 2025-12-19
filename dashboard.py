@@ -103,18 +103,26 @@ def ask_ai_with_rotation(messages, model_id):
         if not key: continue
         try:
             temp_client = Groq(api_key=key)
-            return temp_client.chat.completions.create(model=model_id, messages=messages, stream=True)
+            return temp_client.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                stream=True
+            )
         except Exception as e:
             if "429" in str(e): 
-                st.toast(f"⚠️ {i+1}. Hat Tükendi, Yedek Hat...", icon="🔄")
+                st.toast(f"⚠️ {i+1}. Mühimmat Hattı Tükendi, Yedek Hatta Geçiliyor...", icon="🔄")
                 continue
-            return None
+            else:
+                st.error(f"Sistem Hatası: {e}")
+                return None
+    st.error("❌ Kritik: Tüm API mühimmatı tükendi!")
     return None
 
 class YerelEmbedder:
     def __init__(self):
         self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
     def __call__(self, input): return self.model.encode(input).tolist()
+    def name(self): return "YerelEmbedder"
 
 def anahtar_turet(password):
     kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=b'SavasOdasiSabitTuz', iterations=100000)
@@ -163,27 +171,36 @@ def buluta_kaydet(user_id, data, password, sessiz=False):
     try:
         sifreli = sifrele(data, password)
         if sifreli:
-            supabase.table("chat_logs").upsert({"user_id": user_id, "messages": {"encrypted_data": sifreli}}, on_conflict="user_id").execute()
+            supabase.table("chat_logs").upsert(
+                {"user_id": user_id, "messages": {"encrypted_data": sifreli}}, 
+                on_conflict="user_id"
+            ).execute()
             if not sessiz: st.toast("✅ Veriler Senkronize Edildi", icon="☁️")
-    except: pass
+    except Exception as e: 
+        if not sessiz: st.error(f"Kayıt Hatası: {e}")
 
 @st.cache_resource
 def get_chroma_v4(): return chromadb.EphemeralClient()
+@st.cache_resource
+def get_embedder_v4(): return YerelEmbedder()
 
 def hafizayi_guncelle():
     try:
-        col = get_chroma_v4().get_or_create_collection(name="savas_odasi_ram_v4", embedding_function=YerelEmbedder())
+        chroma = get_chroma_v4()
+        ef = get_embedder_v4()
+        col = chroma.get_or_create_collection(name="savas_odasi_ram_v4", embedding_function=ef)
         for d in glob.glob("ARSIV/*.md"):
             try:
                 adi = os.path.basename(d)
                 if not col.get(ids=[adi])['ids']:
-                    with open(d, "r", encoding="utf-8") as f: col.add(documents=[f.read()], ids=[adi], metadatas=[{"source": adi}])
+                    with open(d, "r", encoding="utf-8") as f: 
+                        col.add(documents=[f.read()], ids=[adi], metadatas=[{"source": adi}])
             except: pass
     except: pass
 
 def hafizadan_getir(soru):
     try:
-        res = get_chroma_v4().get_collection(name="savas_odasi_ram_v4", embedding_function=YerelEmbedder()).query(query_texts=[soru], n_results=3)
+        res = get_chroma_v4().get_collection(name="savas_odasi_ram_v4", embedding_function=get_embedder_v4()).query(query_texts=[soru], n_results=3)
         return "\n".join(res['documents'][0]) if res['documents'] else ""
     except: return ""
 
@@ -202,9 +219,9 @@ if "is_guest" not in st.session_state: st.session_state.is_guest = False
 if "password_cache" not in st.session_state: st.session_state.password_cache = None
 if "chat_sessions" not in st.session_state: st.session_state.chat_sessions = {"Genel Strateji": []}
 if "current_session_name" not in st.session_state: st.session_state.current_session_name = "Genel Strateji"
-if "model_mode" not in st.session_state: st.session_state.model_mode = "deep"
+if "model_mode" not in st.session_state: st.session_state.model_mode = "deep" # Varsayılan: Derin
 
-# --- GİRİŞ ---
+# --- GİRİŞ EKRANI ---
 if not st.session_state.user and not st.session_state.is_guest:
     st.title("🔐 SAVAŞ ODASI: GİRİŞ")
     
@@ -217,17 +234,20 @@ if not st.session_state.user and not st.session_state.is_guest:
                 st.success("Güncellendi!")
             except Exception as e: st.error(f"Hata: {e}")
 
-    col1, col2 = st.columns(2)
-    with col1:
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("🔑 Personel Girişi")
         e = st.text_input("E-posta", key="le")
         p = st.text_input("Şifre", type="password", key="lp")
         if st.button("Giriş Yap"):
-            u = giris_yap(e, p)
-            if u:
-                st.session_state.user, st.session_state.password_cache = u, p
-                d = buluttan_yukle(u.id, p)
-                if d: st.session_state.chat_sessions = d; st.session_state.current_session_name = list(d.keys())[0]
-                st.rerun()
+            try:
+                u = supabase.auth.sign_in_with_password({"email": e, "password": p}).user
+                if u:
+                    st.session_state.user, st.session_state.password_cache = u, p
+                    d = buluttan_yukle(u.id, p)
+                    if d: st.session_state.chat_sessions = d; st.session_state.current_session_name = list(d.keys())[0]
+                    st.rerun()
+            except: st.error("Hatalı giriş.")
         
         # --- KAYIT VE ŞİFRE İŞLEMLERİ (YENİDEN EKLENDİ) ---
         with st.expander("👤 Kayıt Ol / Şifremi Unuttum"):
@@ -236,8 +256,9 @@ if not st.session_state.user and not st.session_state.is_guest:
             if st.button("Kayıt Ol"): kayit_ol(ne, np)
             if st.button("Şifremi Unuttum"): sifre_sifirla(ne)
 
-    with col2:
-        if st.button("Misafir Devam Et >>"): st.session_state.is_guest = True; st.rerun()
+    with c2:
+        st.subheader("🕵️ Misafir")
+        if st.button("Devam Et >>"): st.session_state.is_guest = True; st.rerun()
     st.stop()
 
 # --- SIDEBAR: ULTRA ESNEK ARŞİV SİSTEMİ ---
@@ -326,7 +347,9 @@ with st.sidebar:
     st.header("💬 SOHBET YÖNETİMİ")
     if st.button("➕ YENİ SOHBET"):
         n = f"Op_{datetime.now().strftime('%H%M%S')}"
-        st.session_state.chat_sessions[n] = []; st.session_state.current_session_name = n; st.rerun()
+        st.session_state.chat_sessions[n] = []
+        st.session_state.current_session_name = n
+        st.rerun()
     
     sess_list = list(st.session_state.chat_sessions.keys())
     sel_sess = st.selectbox("Geçmiş", sess_list, index=sess_list.index(st.session_state.current_session_name))
@@ -352,7 +375,7 @@ with col_sol:
     components.html(c_clean, height=900, scrolling=True)
 
 with col_sag:
-    st.markdown("### 🧠 ANALİZ STRATEJİSİ")
+    st.markdown("### 🧠 ANALİZ MERKEZİ")
     m1, m2 = st.columns(2)
     with m1:
         if st.button("🚀 SERİ MÜDAHALE\n(Hızlı & Az Mühimmat)", use_container_width=True):
