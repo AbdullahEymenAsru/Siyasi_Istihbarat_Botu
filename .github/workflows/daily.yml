@@ -2,7 +2,7 @@ name: Gunluk Istihbarat Botu
 
 on:
   schedule:
-    - cron: '0 5,15 * * *' # Her gün 08:00 ve 18:00 (TSİ)
+    - cron: '15 * * *' # Her gün 08:00 ve 18:00 (TSİ)
   workflow_dispatch: # Manuel tetikleme
 
 permissions:
