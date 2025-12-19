@@ -93,6 +93,7 @@ def get_full_text(url):
     if "t.me" in url or ".pdf" in url: return None
     try:
         downloaded = trafilatura.fetch_url(url)
+        # Token tasarrufu için karakter limiti 1500'e çekildi
         return trafilatura.extract(downloaded)[:1500] if downloaded else None
     except: return None
 
@@ -102,7 +103,7 @@ def fetch_news():
     ai_input_data = []
     reference_html_list = []
     
-    # 12 SAATLİK TEKRAR KONTROLÜ (Daha sıkı takip için süre kısaltıldı)
+    # 12 SAATLİK TEKRAR KONTROLÜ
     try:
         past_12h = datetime.datetime.now() - datetime.timedelta(hours=12)
         response = supabase.table("reports").select("content").gte("created_at", past_12h.isoformat()).execute()
@@ -113,13 +114,13 @@ def fetch_news():
     for cat in RSS_SOURCES.values(): all_urls.extend(cat)
     
     counter = 1
-    # Her kaynaktan en taze 3 haberi al (Daha fazla veri)
+    # Her kaynaktan en taze haberi al
     for url in all_urls:
         try:
             feed = feedparser.parse(url)
             if not feed.entries: continue
 
-            # KOMUTANIN EMRİ: SADECE EN TAZE 2 HABER (YÜK DENGESİ İÇİN)
+            # KOMUTANIN EMRİ: SADECE EN TAZE 2 HABER (Token yükünü azaltmak için 3 yerine 2)
             for entry in feed.entries[:2]: 
                 # Link veritabanında var mı diye kontrol et
                 if entry.link not in past_content:
@@ -128,7 +129,7 @@ def fetch_news():
                     title = entry.title
                     source = feed.feed.get('title', 'Kaynak')
                     
-                    # AI Verisi
+                    # AI Verisi (Liste olarak tutuyoruz, string birleştirme yapmıyoruz)
                     ai_input_data.append(f"[{counter}] SOURCE: {source} | TITLE: {title} | CONTENT: {summary}")
                     
                     # E-posta Kaynakça Listesi
@@ -138,7 +139,7 @@ def fetch_news():
                     counter += 1
         except: continue
 
-    # Veriyi ve HTML referanslarını ayrı ayrı döndür
+    # Veriyi liste olarak döndür, referansları string olarak döndür
     return ai_input_data, "".join(reference_html_list)
 
 # ==========================================
@@ -148,7 +149,8 @@ def fetch_news():
 def run_agent_workflow(ai_input_list):
     print(f"🧠 ANALİZ BAŞLADI ({len(ai_input_list)} haber parçalanıyor)...")
     
-    # 1. ADIM: Haberleri 5'erli gruplar halinde parçalara böl (Token güvenliği)
+    # 1. ADIM: Haberleri 5'erli gruplar halinde parçalara böl (Token güvenliği için Chunking)
+    # Bu işlem "Request too large" hatasını kesin olarak engeller.
     chunks = [ai_input_list[i:i + 5] for i in range(0, len(ai_input_list), 5)]
     partial_analyses = []
 
