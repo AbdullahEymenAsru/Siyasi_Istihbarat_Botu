@@ -2,7 +2,7 @@ name: Gunluk Istihbarat Botu
 
 on:
   schedule:
-    - cron: '015 * * *'
+    - cron: '0 15 * * *'
   workflow_dispatch:
 
 permissions:
