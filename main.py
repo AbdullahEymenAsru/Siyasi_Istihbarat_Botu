@@ -301,24 +301,32 @@ if __name__ == "__main__":
         report_html = run_agent_workflow(news_data)
         audio = create_audio_summary(report_html)
         
+        # --- ENTEGRE KAYIT SİSTEMİ (SUPABASE + GITHUB) ---
         try:
-            # Raporun veritabanına kaydı
+            # 1. Supabase'e Kayıt (Dashboard için kritik)
             supabase.table("reports").insert({"content": report_html}).execute()
+            print("✅ Rapor Supabase'e işlendi.")
             
-            # --- KRİTİK GÜNCELLEME: STANDART DOSYA İSMİ FORMATI ---
+            # 2. GitHub Arşivleme (Fiziksel Dosya)
             # Dosya ismi artık her zaman: RAPOR_YYYY-MM-DD_HH-mm.md formatında olacak.
-            file_name = f"ARSIV/RAPOR_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')}.md"
+            now = datetime.datetime.now()
+            file_name = f"ARSIV/RAPOR_{now.strftime('%Y-%m-%d_%H-%M')}.md"
             
+            # Klasör kontrolü
             if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
+            
+            # Dosyayı yaz
             with open(file_name, "w", encoding="utf-8") as f:
                 f.write(report_html + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html_list + "</ul>")
             
-            # Git işlemleri
+            # Git işlemleri ile depoya geri yükle
             subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"], capture_output=True)
             subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"], capture_output=True)
             subprocess.run(["git", "add", "ARSIV/*.md"], capture_output=True) # Tüm arşiv klasörünü ekle
-            subprocess.run(["git", "commit", "-m", f"Otomatik Rapor: {datetime.datetime.now().strftime('%d.%m.%Y')}"], capture_output=True)
+            subprocess.run(["git", "commit", "-m", f"Rapor: {now.strftime('%Y-%m-%d %H:%M')}"], capture_output=True)
             subprocess.run(["git", "push"], capture_output=True)
+            print(f"✅ Rapor GitHub'a arşivlendi: {file_name}")
+            
         except Exception as e:
             print(f"⚠️ Arşivleme/Git Hatası: {e}")
 
