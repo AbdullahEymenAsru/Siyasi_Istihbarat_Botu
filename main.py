@@ -29,6 +29,10 @@ GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
+# GITHUB TOKEN (PUSH İŞLEMİ İÇİN KRİTİK)
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY")
+
 # Client başlatma (ilk anahtar ile varsayılan olarak)
 client = Groq(api_key=GROQ_KEYS[0])
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -126,13 +130,14 @@ def fetch_news():
                     # AI Verisi
                     ai_input_data.append(f"[{counter}] SOURCE: {source} | TITLE: {title} | CONTENT: {summary}")
                     
-                    # E-posta Kaynakça Listesi
+                    # E-posta Kaynakça Listesi - DÜZELTİLDİ: Artık String Değil Liste Olarak Dönüyor
                     reference_html_list.append(
                         f"<li style='margin-bottom:6px;'><b>[{counter}]</b> <a href='{entry.link}' style='color:#0000EE; text-decoration:none;'>{source} - {title}</a></li>"
                     )
                     counter += 1
         except: continue
 
+    # DÜZELTME: Referans listesini string olarak birleştirip döndür
     return "\n\n".join(ai_input_data), "".join(reference_html_list)
 
 # ==========================================
@@ -307,7 +312,7 @@ if __name__ == "__main__":
             supabase.table("reports").insert({"content": report_html}).execute()
             print("✅ Rapor Supabase'e işlendi.")
             
-            # 2. GitHub Arşivleme (Fiziksel Dosya)
+            # 2. GitHub Arşivleme (GÜVENLİ PUSH SİSTEMİ)
             # Dosya ismi artık her zaman: RAPOR_YYYY-MM-DD_HH-mm.md formatında olacak.
             now = datetime.datetime.now()
             file_name = f"ARSIV/RAPOR_{now.strftime('%Y-%m-%d_%H-%M')}.md"
@@ -319,13 +324,17 @@ if __name__ == "__main__":
             with open(file_name, "w", encoding="utf-8") as f:
                 f.write(report_html + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html_list + "</ul>")
             
-            # Git işlemleri ile depoya geri yükle
-            subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"], capture_output=True)
-            subprocess.run(["git", "config", "--global", "user.email", "bot@github.com"], capture_output=True)
-            subprocess.run(["git", "add", "ARSIV/*.md"], capture_output=True) # Tüm arşiv klasörünü ekle
-            subprocess.run(["git", "commit", "-m", f"Rapor: {now.strftime('%Y-%m-%d %H:%M')}"], capture_output=True)
-            subprocess.run(["git", "push"], capture_output=True)
-            print(f"✅ Rapor GitHub'a arşivlendi: {file_name}")
+            # Git işlemleri ile depoya geri yükle (TOKEN İLE GÜVENLİ BAĞLANTI)
+            if GITHUB_TOKEN and GITHUB_REPOSITORY:
+                repo_url = f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPOSITORY}.git"
+                subprocess.run(["git", "config", "--global", "user.name", "WarRoom Bot"], capture_output=True)
+                subprocess.run(["git", "config", "--global", "user.email", "bot@warroom.com"], capture_output=True)
+                subprocess.run(["git", "add", "ARSIV/*.md"], capture_output=True)
+                subprocess.run(["git", "commit", "-m", f"Rapor: {now.strftime('%Y-%m-%d %H:%M')}"], capture_output=True)
+                subprocess.run(["git", "push", repo_url, "HEAD:main"], capture_output=True)
+                print(f"✅ Rapor GitHub'a arşivlendi: {file_name}")
+            else:
+                print("⚠️ GITHUB_TOKEN eksik, dosya push edilemedi.")
             
         except Exception as e:
             print(f"⚠️ Arşivleme/Git Hatası: {e}")
