@@ -210,28 +210,40 @@ def web_ara(soru):
         return "\n".join([f"- {r['title']}: {r['body']}" for r in res])
     except: return ""
 
-# --- KESİN ÇÖZÜM: RAPOR OKUNURLUK DOKTRİNİ ---
+# --- KESİN ÇÖZÜM: RAPOR OKUNURLUK DOKTRİNİ (SABİT TEMA) ---
 def rapor_duzelt(html_content):
     """
-    Raporu Streamlit temasından bağımsız, beyaz zemin üzerine siyah yazı olarak
-    sabitler. Bu fonksiyon, CSS çakışmalarını izole eder.
+    Raporu Streamlit temasından tamamen bağımsız hale getirir.
+    Beyaz zemin üzerine siyah yazı zorlar ve AI'nın renkli kutularını (div)
+    açık renge dönüştürerek okunurluğu %100 garanti eder.
     """
     temiz_html = re.sub(r"```html|```", "", html_content)
     
-    # İframe içine gömülecek stiller (Streamlit dışı)
+    # İframe içine gömülecek stiller (Streamlit dışı, izole ortam)
     sabit_stil = """
     <style>
         body { 
             background-color: #ffffff !important; 
             color: #000000 !important; 
-            font-family: 'Segoe UI', Arial, sans-serif !important; 
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif !important; 
             padding: 20px !important;
+            margin: 0 !important;
+        }
+        /* AI'nın oluşturduğu koyu renkli kutuları açık renge zorla */
+        div[style*="background-color"] { 
+            background-color: #fffafa !important; /* Çok açık kırmızı/beyaz */
+            color: #000000 !important; /* Metni Siyah Yap */
+            border: 2px solid #cc0000 !important; /* Çerçeveyi koru */
+            padding: 15px !important;
+            border-radius: 8px !important;
+            margin-bottom: 20px !important;
         }
         h1, h2, h3 { color: #cc0000 !important; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-        p, li, span, div { color: #1a1a1a !important; line-height: 1.6; }
-        a { color: #0066cc !important; text-decoration: underline; }
-        strong, b { color: #000000 !important; font-weight: 700; }
-        /* Kutu Görünümü */
+        p, li, span, div { color: #1a1a1a !important; line-height: 1.6 !important; }
+        a { color: #0066cc !important; text-decoration: underline !important; }
+        strong, b { color: #000000 !important; font-weight: 700 !important; }
+        
+        /* Genel Kutu Görünümü */
         .report-container {
             background-color: #fdfdfd;
             border: 1px solid #e0e0e0;
@@ -306,7 +318,7 @@ with st.sidebar:
     # Tüm dosyaları oku ve tarihe (oluşturulma zamanına) göre sırala
     dosyalar = sorted(glob.glob("ARSIV/*.md"), key=os.path.getmtime, reverse=True)
     rep = "Veri Yok"
-    secilen_icerik = "<p>Rapor seçiniz...</p>"
+    secilen_icerik = "Seçili rapor yok."
 
     # --- GELİŞMİŞ TARİH AYIKLAMA (ÖN EK FARK ETMEKSİZİN) ---
     all_data = []
@@ -405,11 +417,9 @@ col_sol, col_sag = st.columns([55, 45], gap="medium")
 with col_sol:
     st.subheader(f"📄 Rapor Görünümü")
     st.caption(rep)
-    
-    # --- KESİN OKUNURLUK DÜZELTMESİ BURADA ---
-    # Raporu HTML iframe içine alırken beyaz tema ve siyah yazıyı zorluyoruz.
-    duzeltilmis_html = rapor_duzelt(secilen_icerik)
-    components.html(duzeltilmis_html, height=900, scrolling=True)
+    # --- KRİTİK OKUNURLUK DÜZELTMESİ (RENK ZORLAMA) ---
+    c_clean = rapor_duzelt(secilen_icerik)
+    components.html(c_clean, height=900, scrolling=True)
 
 with col_sag:
     st.markdown("### 🧠 ANALİZ MERKEZİ")
