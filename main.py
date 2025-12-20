@@ -42,6 +42,7 @@ SES_MODELI = "tr-TR-AhmetNeural"
 def get_subscriber_data():
     try:
         # Sadece 'aktif' sütunu TRUE olanları filtrele ve dil tercihini de çek.
+        # Bu veri token tasarrufu mantığı için kritik.
         response = supabase.table("abone_listesi").select("email, aktif_dil").eq("aktif", True).execute()
         return response.data if response.data else []
     except Exception as e:
@@ -210,7 +211,23 @@ def run_agent_workflow(ai_input_list, target_lang="Türkçe"):
             <h2 style="color: #e74c3c; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 SICAK GELİŞMELER (Flashpoint)</h2>
             <p style="font-size: 16px; line-height: 1.6;">(En kritik 2-3 olayı [ID:X] ile anlat.)</p>
         </div>
-        ... (Diğer başlıklar: KÜRESEL SAHA, TEKNOLOJİ, AKADEMİK KAVRAM) ...
+        
+        <div style="margin-bottom: 30px; border-bottom: 2px solid #bdc3c7; padding-bottom: 20px;">
+            <h2 style="color: #2980b9; font-family: 'Georgia', serif;">🌐 KÜRESEL SAHA GÖZLEMİ</h2>
+            <p><b>📍 Asya & Pasifik:</b> ...</p>
+            <p><b>📍 Avrupa & Batı:</b> ...</p>
+            <p><b>📍 Küresel Güney & Orta Doğu:</b> ...</p>
+        </div>
+        
+        <div style="background-color: #f4f6f7; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #d5dbdb;">
+            <h2 style="color: #16a085; margin-top: 0; font-family: 'Georgia', serif;">⚡ TEKNOLOJİ, ENERJİ VE SİBER SAVAŞ</h2>
+            <p style="color: #2c3e50; line-height: 1.6;">...</p>
+        </div>
+
+        <div style="background-color: #fff8e1; border: 1px solid #ffecb3; padding: 15px; border-radius: 5px;">
+            <h3 style="color: #d35400; margin-top: 0;">🎓 GÜNÜN AKADEMİK KAVRAMI</h3>
+            <p><b>Kavram:</b> ... | <b>Tanım:</b> ...</p>
+        </div>
         """
     else:
         final_prompt = """
@@ -221,7 +238,23 @@ def run_agent_workflow(ai_input_list, target_lang="Türkçe"):
             <h2 style="color: #e74c3c; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 FLASHPOINTS</h2>
             <p style="font-size: 16px; line-height: 1.6;">(Describe top 2-3 events using [ID:X].)</p>
         </div>
-        ... (Other headers: GLOBAL FIELD, TECH & ENERGY, ACADEMIC CONCEPT) ...
+        
+        <div style="margin-bottom: 30px; border-bottom: 2px solid #bdc3c7; padding-bottom: 20px;">
+            <h2 style="color: #2980b9; font-family: 'Georgia', serif;">🌐 GLOBAL FIELD OBSERVATIONS</h2>
+            <p><b>📍 Asia & Pacific:</b> ...</p>
+            <p><b>📍 Europe & West:</b> ...</p>
+            <p><b>📍 Global South & Middle East:</b> ...</p>
+        </div>
+        
+        <div style="background-color: #f4f6f7; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #d5dbdb;">
+            <h2 style="color: #16a085; margin-top: 0; font-family: 'Georgia', serif;">⚡ TECH, ENERGY & CYBER WARFARE</h2>
+            <p style="color: #2c3e50; line-height: 1.6;">...</p>
+        </div>
+
+        <div style="background-color: #fff8e1; border: 1px solid #ffecb3; padding: 15px; border-radius: 5px;">
+            <h3 style="color: #d35400; margin-top: 0;">🎓 ACADEMIC CONCEPT OF THE DAY</h3>
+            <p><b>Concept:</b> ... | <b>Definition:</b> ...</p>
+        </div>
         """
 
     for i, key in enumerate(GROQ_KEYS):
@@ -334,31 +367,36 @@ if __name__ == "__main__":
     if news_list and subscribers:
         print("✅ Yeni istihbarat işleniyor...")
         
-        # 1. TÜRKÇE RAPOR ÜRET (Varsayılan ve Arşiv İçin)
-        report_tr = run_agent_workflow(news_list, "Türkçe")
+        # --- TOKEN TASARRUFU & AKILLI ÜRETİM ---
+        # Abone listesindeki dilleri kontrol et.
+        # Eğer İngilizce isteyen yoksa, İngilizce rapor üretilmez.
+        needed_langs = set(sub.get('aktif_dil', 'Türkçe') for sub in subscribers)
+        reports = {}
+
+        for lang in needed_langs:
+            reports[lang] = run_agent_workflow(news_list, lang)
+
+        # Varsayılan Raporu (Türkçe) Arşivle ve Seslendir
+        main_report = reports.get('Türkçe') or list(reports.values())[0]
         
-        # 2. İNGİLİZCE RAPOR ÜRET (İngilizce Aboneler İçin)
-        # Sadece İngilizce abonesi varsa üretmek mantıklı olabilir ama şimdilik standart üretelim
-        report_en = run_agent_workflow(news_list, "English")
-        
-        # SES DOSYASI (Türkçe öncelikli)
-        audio = create_audio_summary(report_tr)
+        audio = create_audio_summary(main_report)
         
         # --- ENTEGRE KAYIT SİSTEMİ (SUPABASE + GITHUB) ---
         try:
-            # Supabase'e Kayıt (Varsayılan TR)
-            supabase.table("reports").insert({"content": report_tr}).execute()
+            # 1. Supabase'e Kayıt (Dashboard için kritik)
+            supabase.table("reports").insert({"content": main_report}).execute()
             print("✅ Rapor Supabase'e işlendi.")
             
-            # GitHub Arşivleme
+            # 2. GitHub Arşivleme (GÜVENLİ PUSH SİSTEMİ)
             now = datetime.datetime.now()
             file_name = f"ARSIV/RAPOR_{now.strftime('%Y-%m-%d_%H-%M')}.md"
             
             if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
             
             with open(file_name, "w", encoding="utf-8") as f:
-                f.write(report_tr + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html + "</ul>")
+                f.write(main_report + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html + "</ul>")
             
+            # Git işlemleri ile depoya geri yükle (TOKEN İLE GÜVENLİ BAĞLANTI)
             if GITHUB_TOKEN and GITHUB_REPOSITORY:
                 repo_url = f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPOSITORY}.git"
                 subprocess.run(["git", "config", "--global", "user.name", "FieldBot"], capture_output=True)
@@ -378,8 +416,8 @@ if __name__ == "__main__":
             email = sub.get('email')
             lang = sub.get('aktif_dil', 'Türkçe') # Varsayılan Türkçe
             
-            # Dile göre rapor seçimi
-            target_report = report_en if lang == "English" else report_tr
+            # Dile göre rapor seçimi (Eğer o dil üretilmediyse varsayılanı kullan)
+            target_report = reports.get(lang, main_report)
             
             send_custom_email(target_report, ref_html, audio, email, lang)
             
