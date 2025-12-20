@@ -38,18 +38,15 @@ client = Groq(api_key=GROQ_KEYS[0])
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 SES_MODELI = "tr-TR-AhmetNeural"
 
-# --- KRİTİK DÜZELTME: SADECE 'TRUE' OLANLARI ÇEK ---
-def get_email_list():
+# --- GELİŞMİŞ ALICI LİSTESİ (DİL TERCİHLİ) ---
+def get_subscriber_data():
     try:
-        # Sadece 'aktif' sütunu TRUE olanları filtrele. 
-        # FALSE veya NULL olanlar bu filtreye takılır ve listeye alınmaz.
-        response = supabase.table("abone_listesi").select("email").eq("aktif", True).execute()
-        return [row['email'] for row in response.data] if response.data else []
+        # Sadece 'aktif' sütunu TRUE olanları filtrele ve dil tercihini de çek.
+        response = supabase.table("abone_listesi").select("email, aktif_dil").eq("aktif", True).execute()
+        return response.data if response.data else []
     except Exception as e:
         print(f"⚠️ Veritabanı Hatası: {e}")
         return []
-
-ALICI_LISTESI = get_email_list()
 
 # ==========================================
 # 2. GENİŞLETİLMİŞ KÜRESEL İSTİHBARAT AĞI
@@ -117,7 +114,6 @@ def fetch_news():
             # KOMUTANIN EMRİ: SADECE EN TAZE 2 HABER
             for entry in feed.entries[:2]: 
                 # 1. TARİH KONTROLÜ (BAYAT HABER ENGELLEYİCİ)
-                # Eğer haberin yayın tarihi varsa ve 48 saatten eskiyse ALMA.
                 if hasattr(entry, 'published_parsed') and entry.published_parsed:
                     dt_pub = datetime.datetime(*entry.published_parsed[:6])
                     if (datetime.datetime.now() - dt_pub).days > 2:
@@ -146,33 +142,39 @@ def fetch_news():
     return ai_input_data, "".join(reference_html_list)
 
 # ==========================================
-# 4. ANALİZ (CHUNK-BASED & ROTATIONAL MOTOR)
+# 4. ÇOK DİLLİ ANALİZ (CHUNK-BASED & ROTATIONAL MOTOR)
 # ==========================================
 
-def run_agent_workflow(ai_input_list):
+def run_agent_workflow(ai_input_list, target_lang="Türkçe"):
     if not ai_input_list:
         return None # Haber yoksa işlem yapma
 
-    print(f"🧠 ANALİZ BAŞLADI ({len(ai_input_list)} haber DİL FİLTRESİNDEN GEÇİRİLİYOR)...")
+    print(f"🧠 ANALİZ BAŞLADI (Hedef Dil: {target_lang})...")
     
-    # 1. ADIM: Haberleri 6'şarlı gruplar halinde parçalara böl (Token güvenliği için Chunking)
+    # 1. ADIM: Haberleri 6'şarlı gruplar halinde parçalara böl
     chunks = [ai_input_list[i:i + 6] for i in range(0, len(ai_input_list), 6)]
     partial_analyses = []
 
-    # DEMİR YUMRUK PROMPT (DİL VE İÇERİK KONTROLÜ İÇİN GÜNCELLENDİ)
-    system_prompt = """
-    Sen bir Askeri İstihbarat Analistisin.
-    GÖREVİN: Ham verileri alıp, varsa YABANCI DİLLERİ (Endonezce, İngilizce vb.) temizleyerek profesyonel TÜRKÇE rapor oluşturmak.
+    # DİLE DUYARLI PROMPT
+    if target_lang == "Türkçe":
+        lang_instruction = "Lütfen tüm raporu profesyonel Türkçe ile hazırla."
+    else:
+        lang_instruction = "Please prepare the entire report in professional English."
 
+    # DEMİR YUMRUK PROMPT (DİL VE İÇERİK KONTROLÜ)
+    system_prompt = f"""
+    Sen bir Askeri İstihbarat Analistisin.
+    GÖREVİN: Ham verileri alıp, varsa YABANCI DİLLERİ temizleyerek profesyonel rapor oluşturmak.
+    
     KURALLAR:
-    1. DİL ZORUNLULUĞU: Tüm metinler Türkçe olacak. Asla Endonezce veya İngilizce cümle bırakma.
-    2. TERMİNOLOJİ: Kritik kavramların İngilizcesini parantez içinde ver. Örn: "Güç Projeksiyonu (Power Projection)".
-    3. YORUM YOK, OLGU VAR: Analist notunu 15 kelimeyle sınırla. Olayın kendisine (Kim, Ne, Nerede) odaklan.
-    4. KAVRAM SEÇİMİ: 'Güvenlik İkilemi' veya 'Thukydides Tuzağı' gibi klişeleri YASAKLA. Daha sofistike kavramlar (Örn: Gri Bölge, Hukuk Savaşı) kullan.
+    1. DİL: {lang_instruction}
+    2. TERMİNOLOJİ: Kritik kavramların İngilizcesini parantez içinde ver.
+    3. YORUM YOK, OLGU VAR: Analist notunu 15 kelimeyle sınırla.
+    4. KAVRAM SEÇİMİ: Basit klişeleri YASAKLA. Daha sofistike kavramlar kullan.
     5. Her haberin başına [ID:X] etiketini koru.
     """
 
-    # 2. ADIM: Her parçayı ayrı ayrı analiz et (Map Phase)
+    # 2. ADIM: Her parçayı ayrı ayrı analiz et
     for chunk in chunks:
         chunk_text = "\n\n".join(chunk)
         success = False
@@ -188,7 +190,7 @@ def run_agent_workflow(ai_input_list):
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": f"Şu verileri TEMİZLE, ÇEVİR ve ÖZETLE:\n{chunk_text}"}
                     ],
-                    temperature=0.2 # Düşük sıcaklık = Daha az halüsinasyon, daha net çeviri
+                    temperature=0.2 
                 )
                 partial_analyses.append(completion.choices[0].message.content)
                 success = True
@@ -196,36 +198,31 @@ def run_agent_workflow(ai_input_list):
                 print(f"⚠️ {i+1}. Anahtar hatası, rotasyon deneniyor... {e}")
                 continue
     
-    # 3. ADIM: Tüm parçaları birleştirip Final Raporu Oluştur (Reduce Phase)
+    # 3. ADIM: Final Raporu Oluştur
     final_input = "\n\n".join(partial_analyses)
-    final_prompt = """
-    Aşağıdaki analiz notlarını birleştirerek profesyonel bir BILINGUAL (ÇİFT DİLLİ TERMİNOLOJİLİ) SAHA RAPORU oluştur.
-
-    **ZORUNLU HTML FORMATI:**
     
-    <div style="background-color: #2c3e50; color: #ecf0f1; padding: 20px; border-left: 6px solid #e74c3c; margin-bottom: 25px; border-radius: 4px;">
-        <h2 style="color: #e74c3c; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 SICAK GELİŞMELER (Flashpoint)</h2>
-        <p style="font-size: 16px; line-height: 1.6;">(En kritik 2-3 olayı, haber diliyle ve [ID:X] kullanarak anlat. Tarihlerin GÜNCEL olduğundan emin ol.)</p>
-    </div>
+    if target_lang == "Türkçe":
+        final_prompt = """
+        Aşağıdaki analiz notlarını birleştirerek profesyonel bir SAHA RAPORU oluştur.
 
-    <div style="margin-bottom: 30px; border-bottom: 2px solid #bdc3c7; padding-bottom: 20px;">
-        <h2 style="color: #2980b9; font-family: 'Georgia', serif;">🌐 KÜRESEL SAHA GÖZLEMİ</h2>
-        <p><b>📍 Asya & Pasifik:</b> (Çin, Hindistan vb. somut gelişmeler.)</p>
-        <p><b>📍 Avrupa & Batı:</b> (Savunma sanayi ve diplomatik hamleler.)</p>
-        <p><b>📍 Küresel Güney & Orta Doğu:</b> (Afrika, Latin Amerika, Arap coğrafyası.)</p>
-    </div>
-    
-    <div style="background-color: #f4f6f7; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #d5dbdb;">
-        <h2 style="color: #16a085; margin-top: 0; font-family: 'Georgia', serif;">⚡ TEKNOLOJİ, ENERJİ VE SİBER SAVAŞ</h2>
-        <p style="color: #2c3e50; line-height: 1.6;">(Enerji hatları, çip savaşları, siber saldırılar ve savunma sanayi haberleri.)</p>
-    </div>
+        **ZORUNLU HTML FORMATI:**
+        <div style="background-color: #2c3e50; color: #ecf0f1; padding: 20px; border-left: 6px solid #e74c3c; margin-bottom: 25px; border-radius: 4px;">
+            <h2 style="color: #e74c3c; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 SICAK GELİŞMELER (Flashpoint)</h2>
+            <p style="font-size: 16px; line-height: 1.6;">(En kritik 2-3 olayı [ID:X] ile anlat.)</p>
+        </div>
+        ... (Diğer başlıklar: KÜRESEL SAHA, TEKNOLOJİ, AKADEMİK KAVRAM) ...
+        """
+    else:
+        final_prompt = """
+        Combine the notes below into a professional FIELD REPORT.
 
-    <div style="background-color: #fff8e1; border: 1px solid #ffecb3; padding: 15px; border-radius: 5px;">
-        <h3 style="color: #d35400; margin-top: 0;">🎓 GÜNÜN AKADEMİK KAVRAMI (Interesting Concept)</h3>
-        <p><b>ÖNEMLİ:</b> Basit kavram kullanma. Habere uygun, entelektüel bir kavram seç.</p>
-        <p><b>Kavram:</b> ... | <b>Tanım:</b> ... | <b>📖 Önerilen Eser:</b> ...</p>
-    </div>
-    """
+        **MANDATORY HTML FORMAT:**
+        <div style="background-color: #2c3e50; color: #ecf0f1; padding: 20px; border-left: 6px solid #e74c3c; margin-bottom: 25px; border-radius: 4px;">
+            <h2 style="color: #e74c3c; margin-top: 0; font-family: 'Arial Black', sans-serif;">🚨 FLASHPOINTS</h2>
+            <p style="font-size: 16px; line-height: 1.6;">(Describe top 2-3 events using [ID:X].)</p>
+        </div>
+        ... (Other headers: GLOBAL FIELD, TECH & ENERGY, ACADEMIC CONCEPT) ...
+        """
 
     for i, key in enumerate(GROQ_KEYS):
         try:
@@ -263,15 +260,14 @@ def create_audio_summary(report_html):
         return filename
     except: return None
 
-def send_email(report_body, references_html, audio_file):
-    if not ALICI_LISTESI: 
-        print("⚠️ Aktif alıcı bulunamadı.")
-        return
-    
-    print(f"📧 {len(ALICI_LISTESI)} aktif aboneye gönderiliyor...")
+def send_custom_email(report_body, references_html, audio_file, email, lang="Türkçe"):
+    print(f"📧 {email} adresine ({lang}) gönderiliyor...")
     today = datetime.datetime.now().strftime("%d.%m.%Y")
     
-    # --- DÜĞME EKLEMESİ YAPILDI ---
+    subject = f"STRATEJİK RAPOR: {today}" if lang == "Türkçe" else f"STRATEGIC INTEL REPORT: {today}"
+    panel_text = "📡 CANLI STRATEJİK PANELİ AÇ" if lang == "Türkçe" else "📡 OPEN LIVE STRATEGIC PANEL"
+    source_text = "📚 DOĞRULANMIŞ KAYNAKLAR" if lang == "Türkçe" else "📚 VERIFIED INTELLIGENCE SOURCES"
+    
     email_html = f"""
     <html>
     <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #333; background-color: #f9f9f9;">
@@ -280,13 +276,13 @@ def send_email(report_body, references_html, audio_file):
             <div style="text-align: center; margin-bottom: 25px;">
                 <a href="https://siyasi-istihbarat-botu.streamlit.app/" 
                    style="background-color: #cc0000; color: #ffffff; padding: 12px 25px; text-decoration: none; font-weight: bold; border-radius: 5px; display: inline-block;">
-                   📡 CANLI STRATEJİK PANELİ AÇ
+                   {panel_text}
                 </a>
             </div>
 
             <div style="text-align: center; border-bottom: 3px solid #2c3e50; padding-bottom: 15px; margin-bottom: 25px;">
                 <h1 style="color: #2c3e50; margin: 0; font-size: 24px;">KÜRESEL SAVAŞ ODASI</h1>
-                <p style="color: #7f8c8d; font-style: italic; margin-top: 5px;">Saha İstihbarat ve Strateji Bülteni | {today}</p>
+                <p style="color: #7f8c8d; font-style: italic; margin-top: 5px;">{today}</p>
             </div>
 
             <div style="line-height: 1.7; font-size: 15px;">
@@ -294,7 +290,7 @@ def send_email(report_body, references_html, audio_file):
             </div>
 
             <div style="margin-top: 40px; background: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #3498db;">
-                <h3 style="color: #2c3e50; margin-top: 0; font-size: 16px;">📚 DOĞRULANMIŞ İSTİHBARAT KAYNAKLARI</h3>
+                <h3 style="color: #2c3e50; margin-top: 0; font-size: 16px;">{source_text}</h3>
                 <ul style="font-size: 12px; color: #34495e; padding-left: 20px;">{references_html}</ul>
             </div>
         </div>
@@ -307,27 +303,25 @@ def send_email(report_body, references_html, audio_file):
         server.starttls()
         server.login(GMAIL_USER, GMAIL_PASSWORD)
 
-        for email in ALICI_LISTESI:
-            msg = MIMEMultipart()
-            msg['From'] = GMAIL_USER
-            msg['To'] = email
-            msg['Subject'] = f"GÜNLÜK İSTİHBARAT: {today}"
-            msg.attach(MIMEText(email_html, 'html'))
+        msg = MIMEMultipart()
+        msg['From'] = GMAIL_USER
+        msg['To'] = email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(email_html, 'html'))
 
-            if audio_file and os.path.exists(audio_file):
-                with open(audio_file, "rb") as f:
-                    part = MIMEBase('application', 'octet-stream')
-                    part.set_payload(f.read())
-                    encoders.encode_base64(part)
-                    part.add_header('Content-Disposition', f'attachment; filename="{audio_file}"')
-                    msg.attach(part)
+        if audio_file and os.path.exists(audio_file):
+            with open(audio_file, "rb") as f:
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename="{audio_file}"')
+                msg.attach(part)
 
-            server.sendmail(GMAIL_USER, email, msg.as_string())
-        
+        server.sendmail(GMAIL_USER, email, msg.as_string())
         server.quit()
-        print("✅ E-posta Operasyonu Tamamlandı.")
+        print(f"✅ Gönderim Başarılı: {email}")
     except Exception as e:
-        print(f"❌ Mail Hatası: {e}")
+        print(f"❌ Mail Hatası ({email}): {e}")
 
 # ==========================================
 # 6. ÇALIŞTIRMA (MAIN BLOCK)
@@ -335,30 +329,36 @@ def send_email(report_body, references_html, audio_file):
 
 if __name__ == "__main__":
     news_list, ref_html = fetch_news()
+    subscribers = get_subscriber_data() # Tüm abone verilerini (dil dahil) çek
     
-    # HABER YOKSA SESSİZLİK: report_html None gelirse durur
-    report_html = run_agent_workflow(news_list)
-    
-    if report_html:
+    if news_list and subscribers:
         print("✅ Yeni istihbarat işleniyor...")
-        audio = create_audio_summary(report_html)
+        
+        # 1. TÜRKÇE RAPOR ÜRET (Varsayılan ve Arşiv İçin)
+        report_tr = run_agent_workflow(news_list, "Türkçe")
+        
+        # 2. İNGİLİZCE RAPOR ÜRET (İngilizce Aboneler İçin)
+        # Sadece İngilizce abonesi varsa üretmek mantıklı olabilir ama şimdilik standart üretelim
+        report_en = run_agent_workflow(news_list, "English")
+        
+        # SES DOSYASI (Türkçe öncelikli)
+        audio = create_audio_summary(report_tr)
         
         # --- ENTEGRE KAYIT SİSTEMİ (SUPABASE + GITHUB) ---
         try:
-            # 1. Supabase'e Kayıt (Dashboard için kritik)
-            supabase.table("reports").insert({"content": report_html}).execute()
+            # Supabase'e Kayıt (Varsayılan TR)
+            supabase.table("reports").insert({"content": report_tr}).execute()
             print("✅ Rapor Supabase'e işlendi.")
             
-            # 2. GitHub Arşivleme (GÜVENLİ PUSH SİSTEMİ)
+            # GitHub Arşivleme
             now = datetime.datetime.now()
             file_name = f"ARSIV/RAPOR_{now.strftime('%Y-%m-%d_%H-%M')}.md"
             
             if not os.path.exists("ARSIV"): os.makedirs("ARSIV")
             
             with open(file_name, "w", encoding="utf-8") as f:
-                f.write(report_html + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html + "</ul>")
+                f.write(report_tr + "\n\n<h3>REFERANSLAR</h3>\n<ul>" + ref_html + "</ul>")
             
-            # Git işlemleri ile depoya geri yükle (TOKEN İLE GÜVENLİ BAĞLANTI)
             if GITHUB_TOKEN and GITHUB_REPOSITORY:
                 repo_url = f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPOSITORY}.git"
                 subprocess.run(["git", "config", "--global", "user.name", "FieldBot"], capture_output=True)
@@ -373,8 +373,16 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"⚠️ Arşivleme/Git Hatası: {e}")
 
-        # E-posta Dağıtımı
-        send_email(report_html, ref_html, audio)
+        # --- KİŞİSELLEŞTİRİLMİŞ E-POSTA DAĞITIMI ---
+        for sub in subscribers:
+            email = sub.get('email')
+            lang = sub.get('aktif_dil', 'Türkçe') # Varsayılan Türkçe
+            
+            # Dile göre rapor seçimi
+            target_report = report_en if lang == "English" else report_tr
+            
+            send_custom_email(target_report, ref_html, audio, email, lang)
+            
         print("🚀 İstihbarat akışı başarıyla tamamlandı.")
     else:
         print("⚠️ Son 24 saat içinde raporlanmamış YENİ bir gelişme tespit edilemedi. Operasyon askıya alındı.")
