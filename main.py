@@ -271,23 +271,31 @@ def send_email(report_body, references_html, audio_file):
     print(f"📧 {len(ALICI_LISTESI)} aktif aboneye gönderiliyor...")
     today = datetime.datetime.now().strftime("%d.%m.%Y")
     
+    # --- DÜĞME EKLEMESİ YAPILDI ---
     email_html = f"""
     <html>
     <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #333; background-color: #f9f9f9;">
         <div style="max-width: 850px; margin: auto; background: white; border: 1px solid #ddd; padding: 25px; box-shadow: 0 4px 8px rgba(0,0,0,0.05);">
+            
+            <div style="text-align: center; margin-bottom: 25px;">
+                <a href="https://siyasi-istihbarat-botu.streamlit.app/" 
+                   style="background-color: #cc0000; color: #ffffff; padding: 12px 25px; text-decoration: none; font-weight: bold; border-radius: 5px; display: inline-block;">
+                   📡 CANLI STRATEJİK PANELİ AÇ
+                </a>
+            </div>
+
             <div style="text-align: center; border-bottom: 3px solid #2c3e50; padding-bottom: 15px; margin-bottom: 25px;">
                 <h1 style="color: #2c3e50; margin: 0; font-size: 24px;">KÜRESEL SAVAŞ ODASI</h1>
                 <p style="color: #7f8c8d; font-style: italic; margin-top: 5px;">Saha İstihbarat ve Strateji Bülteni | {today}</p>
             </div>
+
             <div style="line-height: 1.7; font-size: 15px;">
                 {report_body}
             </div>
+
             <div style="margin-top: 40px; background: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #3498db;">
                 <h3 style="color: #2c3e50; margin-top: 0; font-size: 16px;">📚 DOĞRULANMIŞ İSTİHBARAT KAYNAKLARI</h3>
                 <ul style="font-size: 12px; color: #34495e; padding-left: 20px;">{references_html}</ul>
-            </div>
-            <div style="text-align: center; margin-top: 20px; font-size: 11px; color: #aaa;">
-                <p>Bu rapor, açık kaynak istihbarat (OSINT) verileri kullanılarak hazırlanmıştır.</p>
             </div>
         </div>
     </body>
