@@ -30,7 +30,7 @@ if "theme" not in st.session_state:
 if "lang" not in st.session_state:
     st.session_state.lang = "Türkçe"
 
-# Dinamik Dil Sözlüğü (Yeni Eklendi)
+# Dinamik Dil Sözlüğü
 L = {
     "Türkçe": {
         "title": "KÜRESEL SAVAŞ ODASI",
@@ -86,7 +86,6 @@ else:
     v_chat_bg, v_input_bg = "#F0F2F6", "#FFFFFF"
     v_border, v_accent = "#DCDDE1", "#2E7D32"
 
-# CSS - Görsel Etiketler ve Düzen
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {v_bg} !important; color: {v_text} !important; }}
@@ -206,7 +205,7 @@ def kayit_ol(email, password):
 def sifre_sifirla(email):
     try:
         supabase.auth.reset_password_email(email, options={"redirect_to": SITE_URL})
-        st.success("Bağlantı gönderildi.")
+        st.success("Bağlantı e-posta adresinize gönderildi.")
     except Exception as e: st.error(f"Hata: {e}")
 
 def buluttan_yukle(user_id, password):
@@ -316,6 +315,7 @@ def rapor_duzelt(html_content):
         }
     </style>
     """
+    
     return f"{sabit_stil}<div class='report-container'>{temiz_html}</div>"
 
 # ==========================================
@@ -329,20 +329,23 @@ if "chat_sessions" not in st.session_state: st.session_state.chat_sessions = {"G
 if "current_session_name" not in st.session_state: st.session_state.current_session_name = "Genel Strateji"
 if "model_mode" not in st.session_state: st.session_state.model_mode = "deep" # Varsayılan: Derin
 
-# --- GİRİŞ VE KAYIT EKRANI (GÜNCELLENDİ) ---
+# --- GİRİŞ VE KAYIT EKRANI (ŞİFRE SIFIRLAMA SEKMEDE) ---
 if not st.session_state.user and not st.session_state.is_guest:
     st.title("🛡️ SAVAŞ ODASI HQ: ERİŞİM PANELİ")
     
+    # ŞİFRE YENİLEME DURUMU (E-postadaki linke tıklandığında çalışır)
     if "type" in st.query_params and st.query_params["type"] == "recovery":
-        st.info("🔄 Şifre Sıfırlama")
-        new_pass_reset = st.text_input("Yeni Şifre", type="password")
-        if st.button("Güncelle"):
+        st.info("🔄 Şifre Yenileme Operasyonu")
+        new_p = st.text_input("Yeni Şifre", type="password")
+        if st.button("Şifreyi Güncelle"):
             try:
-                supabase.auth.update_user({"password": new_pass_reset})
-                st.success("Güncellendi!")
+                supabase.auth.update_user({"password": new_p})
+                st.success("Şifreniz başarıyla güncellendi! Giriş yapabilirsiniz.")
+                time.sleep(2); st.rerun()
             except Exception as e: st.error(f"Hata: {e}")
 
-    tab1, tab2 = st.tabs(["🔑 Giriş Yap", "👤 Yeni Personel Kaydı"])
+    # --- YENİ EKLENEN TAB (ŞİFRE SIFIRLAMA) BURADA ---
+    tab1, tab2, tab3 = st.tabs(["🔑 Giriş Yap", "👤 Personel Kaydı", "🔒 Şifremi Unuttum"])
     
     with tab1:
         e = st.text_input("E-posta", key="le")
@@ -383,7 +386,13 @@ if not st.session_state.user and not st.session_state.is_guest:
                     }).execute()
                     st.success("Kayıt başarılı! Lütfen giriş yapın.")
             except Exception as ex: st.error(f"Kayıt Hatası: {ex}")
-            if st.button("Şifremi Unuttum"): sifre_sifirla(ne)
+
+    # --- ŞİFREMİ UNUTTUM SEKME İÇERİĞİ ---
+    with tab3:
+        st.subheader("Şifre Kurtarma")
+        fe = st.text_input("Sistemde Kayıtlı E-posta")
+        if st.button("Kurtarma Bağlantısı Gönder"):
+            sifre_sifirla(fe)
 
     if st.button("🕵️ Misafir Olarak Devam Et"):
         st.session_state.is_guest = True; st.rerun()
