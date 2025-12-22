@@ -337,9 +337,13 @@ def send_custom_email(report_body, references_html, audio_file, email, lang="Tü
     """
 
     try:
-        # --- KRİTİK GÜNCELLEME: OUTLOOK SMTP AYARLARI ---
-        server = smtplib.SMTP('smtp.office365.com', 587)
-        server.starttls()
+        # --- KRİTİK GÜNCELLEME: OUTLOOK BAĞLANTI AYARLARI ---
+        # Standart office365 yerine legacy destekli outlook sunucusu
+        server = smtplib.SMTP('smtp-mail.outlook.com', 587)
+        server.ehlo() # Sunucu ile el sıkışma
+        server.starttls() # Şifreli bağlantı başlat
+        server.ehlo() # Tekrar el sıkışma (TLS sonrası)
+        
         server.login(OUTLOOK_USER, OUTLOOK_PASSWORD)
 
         msg = MIMEMultipart()
@@ -376,6 +380,7 @@ if __name__ == "__main__":
         
         # --- TOKEN TASARRUFU & AKILLI ÜRETİM ---
         # Abone listesindeki dilleri kontrol et.
+        # Eğer İngilizce isteyen yoksa, İngilizce rapor üretilmez.
         needed_langs = set(sub.get('aktif_dil', 'Türkçe') for sub in subscribers)
         reports = {}
 
