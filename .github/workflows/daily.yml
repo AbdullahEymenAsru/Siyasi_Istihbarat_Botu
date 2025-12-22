@@ -33,13 +33,14 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
-          # --- GÜNCELLEME: GMAIL YERİNE OUTLOOK EKLENDİ ---
-          OUTLOOK_USER: ${{ secrets.OUTLOOK_USER }}
-          OUTLOOK_PASSWORD: ${{ secrets.OUTLOOK_PASSWORD }}
-          # ------------------------------------------------
+          # --- KRİTİK GÜNCELLEME: BREVO SMTP ANAHTARLARI ---
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SENDER_MAIL: ${{ secrets.SENDER_MAIL }}
+          # -------------------------------------------------
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          # --- KRİTİK EKLEME: GİT İŞLEMLERİ İÇİN ---
+          # --- GİT İŞLEMLERİ İÇİN ---
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
