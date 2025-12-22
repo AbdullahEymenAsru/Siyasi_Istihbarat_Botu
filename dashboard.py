@@ -322,7 +322,7 @@ def rapor_duzelt(html_content):
     
     return f"{sabit_stil}<div class='report-container'>{temiz_html}</div>"
 
-# --- AYARLAR MENÜSÜ FONKSİYONU (YENİ) ---
+# --- AYARLAR MENÜSÜ FONKSİYONU (YENİ EKLENDİ) ---
 def ayarlar_sayfasi():
     st.title("⚙️ " + ( "KARARGAH AYARLARI" if st.session_state.lang == "Türkçe" else "HQ SETTINGS" ))
     st.divider()
@@ -348,7 +348,9 @@ def ayarlar_sayfasi():
         
         if st.button("💾 Kaydet / Save Language"):
             try:
+                # Veritabanını güncelle
                 supabase.table("abone_listesi").update({"aktif_dil": yeni_dil}).eq("email", user_email).execute()
+                # Oturumu güncelle
                 st.session_state.lang = yeni_dil
                 st.success(f"Dil {yeni_dil} olarak güncellendi! / Language updated to {yeni_dil}!")
                 time.sleep(1.5)
@@ -381,8 +383,10 @@ if "password_cache" not in st.session_state: st.session_state.password_cache = N
 if "chat_sessions" not in st.session_state: st.session_state.chat_sessions = {"Genel Strateji": []}
 if "current_session_name" not in st.session_state: st.session_state.current_session_name = "Genel Strateji"
 if "model_mode" not in st.session_state: st.session_state.model_mode = "deep" # Varsayılan: Derin
+# Navigasyon Durumu
+if "page_nav" not in st.session_state: st.session_state.page_nav = "Ana Panel"
 
-# --- ŞİFRE SIFIRLAMA YAKALAYICI (YENİ EKLENDİ) ---
+# --- ŞİFRE SIFIRLAMA YAKALAYICI (YENİ - EKRANI KİLİTLER) ---
 # Linkten gelen recovery isteğini yakalar ve araya girer
 if "type" in st.query_params and st.query_params["type"] == "recovery":
     st.title("🔐 SAVAŞ ODASI: ŞİFRE YENİLEME")
@@ -399,7 +403,7 @@ if "type" in st.query_params and st.query_params["type"] == "recovery":
                     supabase.auth.update_user({"password": new_pw})
                     st.success("Şifreniz başarıyla güncellendi! Giriş ekranına yönlendiriliyorsunuz...")
                     time.sleep(2)
-                    st.query_params.clear() # Parametreleri temizle
+                    st.query_params.clear() # URL Parametrelerini temizle
                     st.rerun()
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
@@ -467,9 +471,6 @@ if not st.session_state.user and not st.session_state.is_guest:
 # --- SIDEBAR: ULTRA ESNEK ARŞİV SİSTEMİ & NAVİGASYON ---
 user_id = st.session_state.user.id if st.session_state.user else "guest"
 user_pass = st.session_state.password_cache
-
-# Varsayılan Sayfa
-if "page_nav" not in st.session_state: st.session_state.page_nav = "Ana Panel"
 
 with st.sidebar:
     # DİL SEÇİMİ (ANLIK DEĞİŞTİRME)
