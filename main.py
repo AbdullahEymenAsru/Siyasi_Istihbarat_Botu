@@ -24,8 +24,10 @@ GROQ_KEYS = [
     os.environ.get("GROQ_API_KEY_2")  # İkinci hesap (100k Token)
 ]
 
-GMAIL_USER = os.environ.get("GMAIL_USER")
-GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD")
+# --- KRİTİK GÜNCELLEME: GMAIL YERİNE OUTLOOK ---
+OUTLOOK_USER = os.environ.get("OUTLOOK_USER")
+OUTLOOK_PASSWORD = os.environ.get("OUTLOOK_PASSWORD")
+
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
@@ -294,10 +296,13 @@ def create_audio_summary(report_html):
     except: return None
 
 def send_custom_email(report_body, references_html, audio_file, email, lang="Türkçe"):
-    print(f"📧 {email} adresine ({lang}) gönderiliyor...")
+    print(f"📧 {email} adresine ({lang}) Outlook ile gönderiliyor...")
     today = datetime.datetime.now().strftime("%d.%m.%Y")
     
-    subject = f"STRATEJİK RAPOR: {today}" if lang == "Türkçe" else f"STRATEGIC INTEL REPORT: {today}"
+    # --- STRATEJİK İSİMLENDİRME ---
+    sender_name = "Savaş Odası HQ" if lang == "Türkçe" else "War Room Headquarters"
+    subject = f"🛡️ [SAVAŞ ODASI] Stratejik İstihbarat Akışı | {today}" if lang == "Türkçe" else f"🛡️ [WAR ROOM] Strategic Intelligence Brief | {today}"
+    
     panel_text = "📡 CANLI STRATEJİK PANELİ AÇ" if lang == "Türkçe" else "📡 OPEN LIVE STRATEGIC PANEL"
     source_text = "📚 DOĞRULANMIŞ KAYNAKLAR" if lang == "Türkçe" else "📚 VERIFIED INTELLIGENCE SOURCES"
     
@@ -332,12 +337,14 @@ def send_custom_email(report_body, references_html, audio_file, email, lang="Tü
     """
 
     try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        # --- KRİTİK GÜNCELLEME: OUTLOOK SMTP AYARLARI ---
+        server = smtplib.SMTP('smtp.office365.com', 587)
         server.starttls()
-        server.login(GMAIL_USER, GMAIL_PASSWORD)
+        server.login(OUTLOOK_USER, OUTLOOK_PASSWORD)
 
         msg = MIMEMultipart()
-        msg['From'] = GMAIL_USER
+        # Profesyonel Gönderici Görünümü
+        msg['From'] = f"{sender_name} <{OUTLOOK_USER}>"
         msg['To'] = email
         msg['Subject'] = subject
         msg.attach(MIMEText(email_html, 'html'))
@@ -350,11 +357,11 @@ def send_custom_email(report_body, references_html, audio_file, email, lang="Tü
                 part.add_header('Content-Disposition', f'attachment; filename="{audio_file}"')
                 msg.attach(part)
 
-        server.sendmail(GMAIL_USER, email, msg.as_string())
+        server.sendmail(OUTLOOK_USER, email, msg.as_string())
         server.quit()
         print(f"✅ Gönderim Başarılı: {email}")
     except Exception as e:
-        print(f"❌ Mail Hatası ({email}): {e}")
+        print(f"❌ Outlook Mail Hatası ({email}): {e}")
 
 # ==========================================
 # 6. ÇALIŞTIRMA (MAIN BLOCK)
@@ -369,7 +376,6 @@ if __name__ == "__main__":
         
         # --- TOKEN TASARRUFU & AKILLI ÜRETİM ---
         # Abone listesindeki dilleri kontrol et.
-        # Eğer İngilizce isteyen yoksa, İngilizce rapor üretilmez.
         needed_langs = set(sub.get('aktif_dil', 'Türkçe') for sub in subscribers)
         reports = {}
 
