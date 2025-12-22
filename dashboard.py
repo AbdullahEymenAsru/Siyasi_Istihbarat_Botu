@@ -50,7 +50,9 @@ L = {
         "deep_mode": "🔬 DERİN STRATEJİ\n(Detaylı & Çok Mühimmat)",
         "input_placeholder": "Analiz emredin...",
         "system_prompt": "Sen Savaş Odası stratejistisin. Yanıtlarını Türkçe ver.",
-        "status": "Küresel veriler analiz ediliyor..."
+        "status": "Küresel veriler analiz ediliyor...",
+        "settings": "⚙️ AYARLAR",
+        "panel": "📊 ANA PANEL"
     },
     "English": {
         "title": "GLOBAL WAR ROOM",
@@ -70,7 +72,9 @@ L = {
         "deep_mode": "🔬 DEEP STRATEGY\n(Detailed & High Ammo)",
         "input_placeholder": "Command an analysis...",
         "system_prompt": "You are a War Room strategist. Always provide responses in English.",
-        "status": "Analyzing global data..."
+        "status": "Analyzing global data...",
+        "settings": "⚙️ SETTINGS",
+        "panel": "📊 MAIN PANEL"
     }
 }
 
@@ -318,6 +322,55 @@ def rapor_duzelt(html_content):
     
     return f"{sabit_stil}<div class='report-container'>{temiz_html}</div>"
 
+# --- AYARLAR MENÜSÜ FONKSİYONU (YENİ) ---
+def ayarlar_sayfasi():
+    st.title("⚙️ " + ( "KARARGAH AYARLARI" if st.session_state.lang == "Türkçe" else "HQ SETTINGS" ))
+    st.divider()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📧 Mail & Dil / Language")
+        user_email = st.session_state.user.email
+        
+        # Mevcut dili Supabase'den çek
+        try:
+            res = supabase.table("abone_listesi").select("aktif_dil").eq("email", user_email).execute()
+            mevcut_db_dil = res.data[0]['aktif_dil'] if res.data else "Türkçe"
+        except:
+            mevcut_db_dil = "Türkçe"
+            
+        yeni_dil = st.selectbox(
+            "Rapor Dili / Report Language", 
+            ["Türkçe", "English"], 
+            index=0 if mevcut_db_dil == "Türkçe" else 1
+        )
+        
+        if st.button("💾 Kaydet / Save Language"):
+            try:
+                supabase.table("abone_listesi").update({"aktif_dil": yeni_dil}).eq("email", user_email).execute()
+                st.session_state.lang = yeni_dil
+                st.success(f"Dil {yeni_dil} olarak güncellendi! / Language updated to {yeni_dil}!")
+                time.sleep(1.5)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Hata/Error: {e}")
+
+    with col2:
+        st.subheader("🔑 Güvenlik / Security")
+        yeni_sifre = st.text_input("Yeni Şifre / New Password", type="password")
+        
+        if st.button("🔐 Şifreyi Değiştir / Update Password"):
+            if len(yeni_sifre) >= 6:
+                try:
+                    supabase.auth.update_user({"password": yeni_sifre})
+                    st.success("Şifreniz başarıyla güncellendi. / Password updated successfully.")
+                except Exception as e:
+                    st.error(f"Hata: {e}")
+            else:
+                st.error("Şifre en az 6 karakter olmalıdır. / Password must be at least 6 characters.")
+
+
 # ==========================================
 # 3. UYGULAMA AKIŞI
 # ==========================================
@@ -329,22 +382,35 @@ if "chat_sessions" not in st.session_state: st.session_state.chat_sessions = {"G
 if "current_session_name" not in st.session_state: st.session_state.current_session_name = "Genel Strateji"
 if "model_mode" not in st.session_state: st.session_state.model_mode = "deep" # Varsayılan: Derin
 
-# --- GİRİŞ VE KAYIT EKRANI (ŞİFRE SIFIRLAMA SEKMEDE) ---
+# --- ŞİFRE SIFIRLAMA YAKALAYICI (YENİ EKLENDİ) ---
+# Linkten gelen recovery isteğini yakalar ve araya girer
+if "type" in st.query_params and st.query_params["type"] == "recovery":
+    st.title("🔐 SAVAŞ ODASI: ŞİFRE YENİLEME")
+    st.info("Güvenlik protokolü devreye girdi. Lütfen yeni şifrenizi belirleyin.")
+    
+    with st.form("recovery_form"):
+        new_pw = st.text_input("Yeni Şifre", type="password")
+        confirm_pw = st.text_input("Yeni Şifre (Tekrar)", type="password")
+        submit = st.form_submit_button("Şifreyi Güncelle")
+        
+        if submit:
+            if new_pw == confirm_pw and len(new_pw) >= 6:
+                try:
+                    supabase.auth.update_user({"password": new_pw})
+                    st.success("Şifreniz başarıyla güncellendi! Giriş ekranına yönlendiriliyorsunuz...")
+                    time.sleep(2)
+                    st.query_params.clear() # Parametreleri temizle
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Hata oluştu: {e}")
+            else:
+                st.warning("Şifreler uyuşmuyor veya 6 karakterden kısa.")
+    st.stop() # Ana giriş ekranını gösterme
+
+# --- GİRİŞ VE KAYIT EKRANI ---
 if not st.session_state.user and not st.session_state.is_guest:
     st.title("🛡️ SAVAŞ ODASI HQ: ERİŞİM PANELİ")
     
-    # ŞİFRE YENİLEME DURUMU (E-postadaki linke tıklandığında çalışır)
-    if "type" in st.query_params and st.query_params["type"] == "recovery":
-        st.info("🔄 Şifre Yenileme Operasyonu")
-        new_p = st.text_input("Yeni Şifre", type="password")
-        if st.button("Şifreyi Güncelle"):
-            try:
-                supabase.auth.update_user({"password": new_p})
-                st.success("Şifreniz başarıyla güncellendi! Giriş yapabilirsiniz.")
-                time.sleep(2); st.rerun()
-            except Exception as e: st.error(f"Hata: {e}")
-
-    # --- YENİ EKLENEN TAB (ŞİFRE SIFIRLAMA) BURADA ---
     tab1, tab2, tab3 = st.tabs(["🔑 Giriş Yap", "👤 Personel Kaydı", "🔒 Şifremi Unuttum"])
     
     with tab1:
@@ -398,9 +464,12 @@ if not st.session_state.user and not st.session_state.is_guest:
         st.session_state.is_guest = True; st.rerun()
     st.stop()
 
-# --- SIDEBAR: ULTRA ESNEK ARŞİV SİSTEMİ ---
+# --- SIDEBAR: ULTRA ESNEK ARŞİV SİSTEMİ & NAVİGASYON ---
 user_id = st.session_state.user.id if st.session_state.user else "guest"
 user_pass = st.session_state.password_cache
+
+# Varsayılan Sayfa
+if "page_nav" not in st.session_state: st.session_state.page_nav = "Ana Panel"
 
 with st.sidebar:
     # DİL SEÇİMİ (ANLIK DEĞİŞTİRME)
@@ -409,168 +478,192 @@ with st.sidebar:
     curr = L[st.session_state.lang]
 
     st.divider()
-    st.header(curr["archive"])
-    search_q = st.text_input(curr["search"], "")
     
-    # Tüm dosyaları oku ve tarihe (oluşturulma zamanına) göre sırala
-    dosyalar = sorted(glob.glob("ARSIV/*.md"), key=os.path.getmtime, reverse=True)
-    rep = "Veri Yok"
-    secilen_icerik = "Seçili rapor yok."
-
-    # --- GELİŞMİŞ TARİH AYIKLAMA (ÖN EK FARK ETMEKSİZİN) ---
-    all_data = []
-    for f in dosyalar:
-        # Dosya adındaki her türlü YYYY-MM-DD formatını yakala
-        match = re.search(r"(\d{4})-(\d{2})-(\d{2})", os.path.basename(f))
-        if match:
-            all_data.append({
-                "y": match.group(1),
-                "m": match.group(2),
-                "d": match.group(3),
-                "path": f,
-                "name": os.path.basename(f)
-            })
-
-    if not search_q and all_data:
-        # 1. YIL SEÇİMİ
-        years = sorted(list(set([d["y"] for d in all_data])), reverse=True)
-        s_y = st.selectbox(curr["year"], years)
+    # --- MENÜ NAVİGASYONU (YENİ EKLENDİ) ---
+    if not st.session_state.is_guest:
+        st.header("🧭 MENÜ")
+        nav_options = [curr["panel"], curr["settings"]]
+        selected_nav = st.radio("Git", nav_options, label_visibility="collapsed")
         
-        # 2. AY SEÇİMİ (İSİMLİ)
-        months = sorted(list(set([d["m"] for d in all_data if d["y"]==s_y])), reverse=True)
-        m_names = [AYLAR.get(m, m) for m in months]
-        s_m_name = st.selectbox(curr["month"], m_names)
-        s_m_val = [k for k,v in AYLAR.items() if v==s_m_name][0]
-        
-        # 3. GÜN SEÇİMİ (İSİMLİ)
-        days = sorted(list(set([d["d"] for d in all_data if d["y"]==s_y and d["m"]==s_m_val])), reverse=True)
-        
-        def gun_formatla(d_str):
-            try:
-                dt = datetime.strptime(f"{s_y}-{s_m_val}-{d_str}", "%Y-%m-%d")
-                return f"{d_str} {GUNLER[dt.weekday()]}"
-            except: return d_str
-            
-        d_opts = {gun_formatla(d): d for d in days}
-        s_d_name = st.selectbox(curr["day"], list(d_opts.keys()))
-        s_d_val = d_opts[s_d_name]
-        
-        # 4. RAPOR SEÇİMİ (SAAT VE ÖN EK FARK ETMEKSİZİN)
-        final_files = [d for d in all_data if d["y"]==s_y and d["m"]==s_m_val and d["d"]==s_d_val]
-        
-        def okunakli_ad(fname):
-            m_saat = re.search(r"_(\d{2})-(\d{2})", fname)
-            label = "📄 " + fname.split("_")[0] # Analiz, Rapor veya WarRoom kısmını al
-            if m_saat:
-                saat = int(m_saat.group(1))
-                periyot = "🌅 Sabah" if saat < 13 else "🌙 Akşam"
-                return f"{label} | {periyot} ({m_saat.group(1)}:{m_saat.group(2)})"
-            return label + " | " + fname
-
-        f_map = {okunakli_ad(d["name"]): d["path"] for d in final_files}
-        s_r = st.selectbox(curr["records"], list(f_map.keys()))
-        
-        if s_r:
-            with open(f_map[s_r], "r", encoding="utf-8") as f:
-                secilen_icerik = f.read()
-                rep = f"{s_d_name} {s_m_name} {s_y} | {s_r}"
-    
-    elif search_q:
-        filt = [f for f in dosyalar if search_q.lower() in f.lower()]
-        if filt:
-            s_f = st.selectbox("Arama Sonuçları", filt, format_func=lambda x: os.path.basename(x))
-            if s_f:
-                with open(s_f, "r", encoding="utf-8") as f:
-                    secilen_icerik = f.read()
-                    rep = os.path.basename(s_f)
+        # Seçimi session state'e işle
+        if selected_nav == curr["settings"]:
+            st.session_state.page_nav = "Ayarlar"
         else:
-            st.warning("Sonuç bulunamadı.")
+            st.session_state.page_nav = "Ana Panel"
+        
+        st.divider()
 
-    st.divider()
-    st.header("💬 SOHBET YÖNETİMİ")
-    if st.button(curr["new_chat"]):
-        n = f"Op_{datetime.now().strftime('%H%M%S')}"
-        st.session_state.chat_sessions[n] = []
-        st.session_state.current_session_name = n
-        st.rerun()
-    
-    sess_list = list(st.session_state.chat_sessions.keys())
-    sel_sess = st.selectbox(curr["history"], sess_list, index=sess_list.index(st.session_state.current_session_name))
-    if sel_sess != st.session_state.current_session_name: st.session_state.current_session_name = sel_sess; st.rerun()
-    
-    if st.button(curr["destroy"]):
-        if len(st.session_state.chat_sessions) > 1: del st.session_state.chat_sessions[st.session_state.current_session_name]; st.session_state.current_session_name = list(st.session_state.chat_sessions.keys())[0]
-        else: st.session_state.chat_sessions[st.session_state.current_session_name] = []
-        st.rerun()
+    # --- SADECE ANA PANELDEYKEN ARŞİV GÖSTER ---
+    if st.session_state.page_nav == "Ana Panel":
+        st.header(curr["archive"])
+        search_q = st.text_input(curr["search"], "")
+        
+        # Tüm dosyaları oku ve tarihe (oluşturulma zamanına) göre sırala
+        dosyalar = sorted(glob.glob("ARSIV/*.md"), key=os.path.getmtime, reverse=True)
+        rep = "Veri Yok"
+        secilen_icerik = "Seçili rapor yok."
+
+        # --- GELİŞMİŞ TARİH AYIKLAMA (ÖN EK FARK ETMEKSİZİN) ---
+        all_data = []
+        for f in dosyalar:
+            # Dosya adındaki her türlü YYYY-MM-DD formatını yakala
+            match = re.search(r"(\d{4})-(\d{2})-(\d{2})", os.path.basename(f))
+            if match:
+                all_data.append({
+                    "y": match.group(1),
+                    "m": match.group(2),
+                    "d": match.group(3),
+                    "path": f,
+                    "name": os.path.basename(f)
+                })
+
+        if not search_q and all_data:
+            # 1. YIL SEÇİMİ
+            years = sorted(list(set([d["y"] for d in all_data])), reverse=True)
+            s_y = st.selectbox(curr["year"], years)
+            
+            # 2. AY SEÇİMİ (İSİMLİ)
+            months = sorted(list(set([d["m"] for d in all_data if d["y"]==s_y])), reverse=True)
+            m_names = [AYLAR.get(m, m) for m in months]
+            s_m_name = st.selectbox(curr["month"], m_names)
+            s_m_val = [k for k,v in AYLAR.items() if v==s_m_name][0]
+            
+            # 3. GÜN SEÇİMİ (İSİMLİ)
+            days = sorted(list(set([d["d"] for d in all_data if d["y"]==s_y and d["m"]==s_m_val])), reverse=True)
+            
+            def gun_formatla(d_str):
+                try:
+                    dt = datetime.strptime(f"{s_y}-{s_m_val}-{d_str}", "%Y-%m-%d")
+                    return f"{d_str} {GUNLER[dt.weekday()]}"
+                except: return d_str
+                
+            d_opts = {gun_formatla(d): d for d in days}
+            s_d_name = st.selectbox(curr["day"], list(d_opts.keys()))
+            s_d_val = d_opts[s_d_name]
+            
+            # 4. RAPOR SEÇİMİ (SAAT VE ÖN EK FARK ETMEKSİZİN)
+            final_files = [d for d in all_data if d["y"]==s_y and d["m"]==s_m_val and d["d"]==s_d_val]
+            
+            def okunakli_ad(fname):
+                m_saat = re.search(r"_(\d{2})-(\d{2})", fname)
+                label = "📄 " + fname.split("_")[0] # Analiz, Rapor veya WarRoom kısmını al
+                if m_saat:
+                    saat = int(m_saat.group(1))
+                    periyot = "🌅 Sabah" if saat < 13 else "🌙 Akşam"
+                    return f"{label} | {periyot} ({m_saat.group(1)}:{m_saat.group(2)})"
+                return label + " | " + fname
+
+            f_map = {okunakli_ad(d["name"]): d["path"] for d in final_files}
+            s_r = st.selectbox(curr["records"], list(f_map.keys()))
+            
+            if s_r:
+                with open(f_map[s_r], "r", encoding="utf-8") as f:
+                    secilen_icerik = f.read()
+                    rep = f"{s_d_name} {s_m_name} {s_y} | {s_r}"
+        
+        elif search_q:
+            filt = [f for f in dosyalar if search_q.lower() in f.lower()]
+            if filt:
+                s_f = st.selectbox("Arama Sonuçları", filt, format_func=lambda x: os.path.basename(x))
+                if s_f:
+                    with open(s_f, "r", encoding="utf-8") as f:
+                        secilen_icerik = f.read()
+                        rep = os.path.basename(s_f)
+            else:
+                st.warning("Sonuç bulunamadı.")
+
+        st.divider()
+        st.header("💬 SOHBET YÖNETİMİ")
+        if st.button(curr["new_chat"]):
+            n = f"Op_{datetime.now().strftime('%H%M%S')}"
+            st.session_state.chat_sessions[n] = []
+            st.session_state.current_session_name = n
+            st.rerun()
+        
+        sess_list = list(st.session_state.chat_sessions.keys())
+        sel_sess = st.selectbox(curr["history"], sess_list, index=sess_list.index(st.session_state.current_session_name))
+        if sel_sess != st.session_state.current_session_name: st.session_state.current_session_name = sel_sess; st.rerun()
+        
+        if st.button(curr["destroy"]):
+            if len(st.session_state.chat_sessions) > 1: del st.session_state.chat_sessions[st.session_state.current_session_name]; st.session_state.current_session_name = list(st.session_state.chat_sessions.keys())[0]
+            else: st.session_state.chat_sessions[st.session_state.current_session_name] = []
+            st.rerun()
     
     if st.button(curr["logout"]): st.session_state.clear(); st.rerun()
 
-# --- ANA EKRAN ---
-st.title(curr["title"])
-with st.spinner("Hafıza Güncelleniyor..."): hafizayi_guncelle()
+# --- ANA EKRAN YÖNETİMİ ---
 
-col_sol, col_sag = st.columns([55, 45], gap="medium")
+if st.session_state.page_nav == "Ayarlar" and not st.session_state.is_guest:
+    # --- AYARLAR SAYFASINI GÖSTER ---
+    ayarlar_sayfasi()
 
-with col_sol:
-    st.subheader(curr["report_view"])
-    st.caption(rep)
-    # --- KRİTİK OKUNURLUK DÜZELTMESİ (RENK ZORLAMA) ---
-    c_clean = rapor_duzelt(secilen_icerik)
-    components.html(c_clean, height=900, scrolling=True)
+else:
+    # --- ANA PANEL (RAPOR VE SOHBET) GÖSTER ---
+    st.title(curr["title"])
+    with st.spinner("Hafıza Güncelleniyor..."): hafizayi_guncelle()
 
-with col_sag:
-    st.markdown(curr["analysis_center"])
-    m1, m2 = st.columns(2)
-    with m1:
-        if st.button(curr["fast_mode"], use_container_width=True):
-            st.session_state.model_mode = "fast"; st.toast("Hızlı Moda Geçildi.")
-    with m2:
-        if st.button(curr["deep_mode"], use_container_width=True):
-            st.session_state.model_mode = "deep"; st.toast("Derin Strateji Aktif.")
-    
-    # --- MODEL DEĞİŞKENİNİ GÜVENLİ OLUŞTURMA ---
-    if st.session_state.model_mode == "fast":
-        selected_model_id = "llama-3.1-8b-instant"
-        current_mode_label = "⚡ SERİ MÜDAHALE"
-    else:
-        selected_model_id = "llama-3.3-70b-versatile"
-        current_mode_label = "🔬 DERİN STRATEJİ"
-    
-    st.caption(f"Aktif Birim: **{current_mode_label}**")
-    st.divider()
-    
-    chat_box = st.container(height=650)
-    msgs = st.session_state.chat_sessions[st.session_state.current_session_name]
-    
-    with chat_box:
-        for m in msgs:
-            if m["role"] == "assistant" and "mode" in m:
-                st.markdown(f"<div class='model-tag'>{m['mode']}</div>", unsafe_allow_html=True)
-            with st.chat_message(m["role"]): st.markdown(m["content"])
+    col_sol, col_sag = st.columns([55, 45], gap="medium")
 
-    if q := st.chat_input(curr["input_placeholder"]):
-        msgs.append({"role": "user", "content": q})
-        chat_box.chat_message("user").markdown(q)
+    with col_sol:
+        st.subheader(curr["report_view"])
+        st.caption(rep)
+        # --- KRİTİK OKUNURLUK DÜZELTMESİ (RENK ZORLAMA) ---
+        c_clean = rapor_duzelt(secilen_icerik)
+        components.html(c_clean, height=900, scrolling=True)
+
+    with col_sag:
+        st.markdown(curr["analysis_center"])
+        m1, m2 = st.columns(2)
+        with m1:
+            if st.button(curr["fast_mode"], use_container_width=True):
+                st.session_state.model_mode = "fast"; st.toast("Hızlı Moda Geçildi.")
+        with m2:
+            if st.button(curr["deep_mode"], use_container_width=True):
+                st.session_state.model_mode = "deep"; st.toast("Derin Strateji Aktif.")
         
-        with chat_box.chat_message("assistant"):
-            ph, full = st.empty(), ""
-            with st.status(curr["status"]) as s:
-                arsiv_context = hafizadan_getir(q)
-                # HİBRİT ARAMA KULLANIMI
-                web_context = web_ara_kuresel(q)
-                s.update(label="Stratejik yanıt hazırlanıyor...", state="complete")
+        # --- MODEL DEĞİŞKENİNİ GÜVENLİ OLUŞTURMA ---
+        if st.session_state.model_mode == "fast":
+            selected_model_id = "llama-3.1-8b-instant"
+            current_mode_label = "⚡ SERİ MÜDAHALE"
+        else:
+            selected_model_id = "llama-3.3-70b-versatile"
+            current_mode_label = "🔬 DERİN STRATEJİ"
+        
+        st.caption(f"Aktif Birim: **{current_mode_label}**")
+        st.divider()
+        
+        chat_box = st.container(height=650)
+        msgs = st.session_state.chat_sessions[st.session_state.current_session_name]
+        
+        with chat_box:
+            for m in msgs:
+                if m["role"] == "assistant" and "mode" in m:
+                    st.markdown(f"<div class='model-tag'>{m['mode']}</div>", unsafe_allow_html=True)
+                with st.chat_message(m["role"]): st.markdown(m["content"])
+
+        if q := st.chat_input(curr["input_placeholder"]):
+            msgs.append({"role": "user", "content": q})
+            chat_box.chat_message("user").markdown(q)
             
-            # SİSTEM PROMPTUNA DİL AYARINI EKLE
-            prompt_context = f"SYSTEM: {curr['system_prompt']}\n\nCONTEXT:\n[ARCHIVE]: {arsiv_context}\n[WEB]: {web_context}\n\nQUESTION: {q}"
-            
-            stream = ask_ai_with_rotation([{"role": "system", "content": curr['system_prompt']}, {"role": "user", "content": prompt_context}], selected_model_id)
-            
-            if stream:
-                for chunk in stream:
-                    if chunk.choices[0].delta.content:
-                        full += chunk.choices[0].delta.content
-                        ph.markdown(full + "▌")
-                ph.markdown(full)
-                msgs.append({"role": "assistant", "content": full, "mode": current_mode_label})
-                if not st.session_state.is_guest: buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass, sessiz=True)
-                st.rerun()
+            with chat_box.chat_message("assistant"):
+                ph, full = st.empty(), ""
+                with st.status(curr["status"]) as s:
+                    arsiv_context = hafizadan_getir(q)
+                    # HİBRİT ARAMA KULLANIMI
+                    web_context = web_ara_kuresel(q)
+                    s.update(label="Stratejik yanıt hazırlanıyor...", state="complete")
+                
+                # SİSTEM PROMPTUNA DİL AYARINI EKLE
+                prompt_context = f"SYSTEM: {curr['system_prompt']}\n\nCONTEXT:\n[ARCHIVE]: {arsiv_context}\n[WEB]: {web_context}\n\nQUESTION: {q}"
+                
+                stream = ask_ai_with_rotation([{"role": "system", "content": curr['system_prompt']}, {"role": "user", "content": prompt_context}], selected_model_id)
+                
+                if stream:
+                    for chunk in stream:
+                        if chunk.choices[0].delta.content:
+                            full += chunk.choices[0].delta.content
+                            ph.markdown(full + "▌")
+                    ph.markdown(full)
+                    msgs.append({"role": "assistant", "content": full, "mode": current_mode_label})
+                    if not st.session_state.is_guest: buluta_kaydet(user_id, st.session_state.chat_sessions, user_pass, sessiz=True)
+                    st.rerun()
