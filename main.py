@@ -24,9 +24,12 @@ GROQ_KEYS = [
     os.environ.get("GROQ_API_KEY_2")  # İkinci hesap (100k Token)
 ]
 
-# --- KRİTİK GÜNCELLEME: GMAIL YERİNE OUTLOOK ---
-OUTLOOK_USER = os.environ.get("OUTLOOK_USER")
-OUTLOOK_PASSWORD = os.environ.get("OUTLOOK_PASSWORD")
+# --- KRİTİK GÜNCELLEME: BREVO PROFESYONEL SMTP HATTI ---
+SMTP_SERVER = "smtp-relay.brevo.com"
+SMTP_PORT = 587
+SMTP_USER = os.environ.get("SMTP_USER")   # Brevo Login (9e9... ile başlayan)
+SMTP_PASS = os.environ.get("SMTP_PASS")   # Brevo Master Password (Key)
+SENDER_MAIL = os.environ.get("SENDER_MAIL") # Görünmesini istediğiniz adres (Örn: eymenakademi@gmail.com)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -296,7 +299,7 @@ def create_audio_summary(report_html):
     except: return None
 
 def send_custom_email(report_body, references_html, audio_file, email, lang="Türkçe"):
-    print(f"📧 {email} adresine ({lang}) Outlook ile gönderiliyor...")
+    print(f"📧 {email} adresine ({lang}) Brevo Kuryesi ile gönderiliyor...")
     today = datetime.datetime.now().strftime("%d.%m.%Y")
     
     # --- STRATEJİK İSİMLENDİRME ---
@@ -337,20 +340,18 @@ def send_custom_email(report_body, references_html, audio_file, email, lang="Tü
     """
 
     try:
-        # --- KRİTİK GÜNCELLEME: OUTLOOK BAĞLANTI AYARLARI ---
-        # Standart office365 yerine legacy destekli outlook sunucusu
-        server = smtplib.SMTP('smtp-mail.outlook.com', 587)
-        server.ehlo() # Sunucu ile el sıkışma
-        server.starttls() # Şifreli bağlantı başlat
-        server.ehlo() # Tekrar el sıkışma (TLS sonrası)
-        
-        server.login(OUTLOOK_USER, OUTLOOK_PASSWORD)
+        # --- KRİTİK GÜNCELLEME: BREVO BAĞLANTISI (KESİN ÇÖZÜM) ---
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls() # Güvenli bağlantıyı başlat
+        server.login(SMTP_USER, SMTP_PASS) # Brevo kimlik doğrulaması
 
         msg = MIMEMultipart()
-        # Profesyonel Gönderici Görünümü
-        msg['From'] = f"{sender_name} <{OUTLOOK_USER}>"
+        # Profesyonel Gönderici Görünümü (Maskelenmiş)
+        msg['From'] = f"{sender_name} <{SENDER_MAIL}>"
         msg['To'] = email
         msg['Subject'] = subject
+        msg['Reply-To'] = SENDER_MAIL # Yanıtlar size döner
+
         msg.attach(MIMEText(email_html, 'html'))
 
         if audio_file and os.path.exists(audio_file):
@@ -361,11 +362,12 @@ def send_custom_email(report_body, references_html, audio_file, email, lang="Tü
                 part.add_header('Content-Disposition', f'attachment; filename="{audio_file}"')
                 msg.attach(part)
 
-        server.sendmail(OUTLOOK_USER, email, msg.as_string())
+        # SMTP_USER (Brevo Hesabı) ile sunucuya bağlanır ama SENDER_MAIL (Sizin adresiniz) başlıkta görünür
+        server.sendmail(SMTP_USER, email, msg.as_string())
         server.quit()
-        print(f"✅ Gönderim Başarılı: {email}")
+        print(f"✅ Brevo Kuryesi ile Başarılı: {email}")
     except Exception as e:
-        print(f"❌ Outlook Mail Hatası ({email}): {e}")
+        print(f"❌ Mail Dağıtım Hatası ({email}): {e}")
 
 # ==========================================
 # 6. ÇALIŞTIRMA (MAIN BLOCK)
@@ -380,7 +382,6 @@ if __name__ == "__main__":
         
         # --- TOKEN TASARRUFU & AKILLI ÜRETİM ---
         # Abone listesindeki dilleri kontrol et.
-        # Eğer İngilizce isteyen yoksa, İngilizce rapor üretilmez.
         needed_langs = set(sub.get('aktif_dil', 'Türkçe') for sub in subscribers)
         reports = {}
 
